@@ -10,63 +10,84 @@ static uint32_t next_bot_random(uint64_t *state) {
 }
 
 /* Estimate a bidding hand by counting cards that would act as the given suit. */
-static int count_suit(const EuchreHand *hand, EuchreSuit suit) {
+static int count_suit(const EuchreObservation *observation, EuchreSuit suit) {
     int count = 0;
-    for (size_t i = 0; i < hand->count; ++i) {
-        if (euchre_effective_suit(hand->cards[i], suit) == suit) ++count;
+    for (size_t i = 0; i < observation->hand_count; ++i) {
+        if (euchre_effective_suit(observation->hand[i], suit) == suit) ++count;
     }
     return count;
 }
 
-/* Complete both bidding rounds with a deliberately simple suit-count strategy. */
-static bool run_simple_bidding(EuchreGame *game) {
-    while (game->phase == EUCHRE_BIDDING_ROUND_ONE) {
-        int player = game->current_player;
-        int trump_count = count_suit(&game->hands[player], game->turned_suit);
-        if (trump_count >= 2) {
-            if (!euchre_order_up(game, trump_count >= 4)) return false;
-            return euchre_dealer_discard(game, 0);
-        }
-        if (!euchre_pass_bid(game)) return false;
+/* Choose the first legal fixed card ID, used for the baseline dealer discard. */
+static EuchreAction first_legal_card(const bool legal_actions[]) {
+    for (int card_id = 0; card_id < EUCHRE_DECK_SIZE; ++card_id) {
+        if (legal_actions[card_id]) return (EuchreAction)card_id;
+    }
+    return EUCHRE_ACTION_INVALID;
+}
+
+/* Make one baseline decision using only public observation data and legal actions. */
+EuchreAction euchre_simple_policy(
+    const EuchreObservation *observation,
+    const bool legal_actions[EUCHRE_ACTION_COUNT], void *context) {
+    if (observation == NULL || legal_actions == NULL || context == NULL) {
+        return EUCHRE_ACTION_INVALID;
     }
 
-    while (game->phase == EUCHRE_BIDDING_ROUND_TWO) {
-        int player = game->current_player;
+    if (observation->phase == EUCHRE_BIDDING_ROUND_ONE) {
+        if (observation->trump != EUCHRE_NO_SUIT) {
+            return first_legal_card(legal_actions);
+        }
+        int trump_count = count_suit(observation, observation->turned_suit);
+        if (trump_count >= 2) {
+            return trump_count >= 4 ? EUCHRE_ACTION_ORDER_UP_ALONE
+                                    : EUCHRE_ACTION_ORDER_UP;
+        }
+        return EUCHRE_ACTION_PASS;
+    }
+
+    if (observation->phase == EUCHRE_BIDDING_ROUND_TWO) {
         EuchreSuit best_suit = EUCHRE_NO_SUIT;
         int best_count = -1;
-
-        /* Check each legal suit and remember the one represented most in the hand. */
         for (int suit = EUCHRE_CLUBS; suit <= EUCHRE_SPADES; ++suit) {
-            if ((EuchreSuit)suit == game->turned_suit) continue;
-            int count = count_suit(&game->hands[player], (EuchreSuit)suit);
+            EuchreAction call = (EuchreAction)(EUCHRE_ACTION_CALL_CLUBS + suit);
+            if (!legal_actions[call]) continue;
+            int count = count_suit(observation, (EuchreSuit)suit);
             if (count > best_count) {
                 best_count = count;
                 best_suit = (EuchreSuit)suit;
             }
         }
-
-        if (best_count >= 2 || player == game->dealer) {
-            return euchre_call_trump(game, best_suit, best_count >= 4);
+        if (best_count >= 2 || !legal_actions[EUCHRE_ACTION_PASS]) {
+            int first_call = best_count >= 4 ? EUCHRE_ACTION_CALL_CLUBS_ALONE
+                                             : EUCHRE_ACTION_CALL_CLUBS;
+            return (EuchreAction)(first_call + best_suit);
         }
-        if (!euchre_pass_bid(game)) return false;
+        return EUCHRE_ACTION_PASS;
     }
-    return false;
+
+    if (observation->phase == EUCHRE_PLAYING) {
+        EuchreAction card_actions[EUCHRE_HAND_SIZE];
+        size_t count = 0;
+        for (int card_id = 0; card_id < EUCHRE_DECK_SIZE; ++card_id) {
+            if (legal_actions[card_id]) {
+                card_actions[count++] = (EuchreAction)card_id;
+            }
+        }
+        if (count == 0) return EUCHRE_ACTION_INVALID;
+        uint64_t *bot_state = context;
+        return card_actions[next_bot_random(bot_state) % count];
+    }
+    return EUCHRE_ACTION_INVALID;
 }
 
-/* Deal, bid, and play a complete hand while rejecting impossible engine states. */
+/* Deal and play a hand with four copies of the baseline policy. */
 bool euchre_play_simple_hand(EuchreGame *game, uint64_t *bot_state) {
     if (game == NULL || bot_state == NULL) return false;
-
-    euchre_deal(game);
-    if (!run_simple_bidding(game)) return false;
-
-    while (game->phase == EUCHRE_PLAYING) {
-        size_t legal[EUCHRE_HAND_SIZE];
-        size_t legal_count = euchre_legal_moves(game, game->current_player, legal);
-        if (legal_count == 0) return false;
-
-        size_t choice = legal[next_bot_random(bot_state) % legal_count];
-        if (!euchre_play_card(game, choice, NULL)) return false;
+    EuchrePolicy policies[EUCHRE_PLAYERS];
+    for (int player = 0; player < EUCHRE_PLAYERS; ++player) {
+        policies[player] = (EuchrePolicy){"simple", euchre_simple_policy,
+                                          bot_state};
     }
-    return game->phase == EUCHRE_HAND_COMPLETE;
+    return euchre_play_policy_hand(game, policies);
 }

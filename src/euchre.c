@@ -54,6 +54,7 @@ static void begin_play(EuchreGame *game) {
     game->tricks_won[0] = 0;
     game->tricks_won[1] = 0;
     memset(game->trick_slot_used, 0, sizeof(game->trick_slot_used));
+    memset(game->cards_played, 0, sizeof(game->cards_played));
 }
 
 /* Initialize persistent game state and seed repeatable shuffles for simulations. */
@@ -109,6 +110,7 @@ void euchre_deal(EuchreGame *game) {
     game->bid_turns = 0;
     game->current_player = next_player(game->dealer);
     game->phase = EUCHRE_BIDDING_ROUND_ONE;
+    memset(game->cards_played, 0, sizeof(game->cards_played));
 }
 
 /* Accept a first-round bid, including a lone bid, and give the dealer the upcard. */
@@ -186,6 +188,23 @@ EuchreSuit euchre_effective_suit(EuchreCard card, EuchreSuit trump) {
         return trump;
     }
     return card.suit;
+}
+
+/* Convert a card to a stable ID ordered by suit, then rank. */
+int euchre_card_id(EuchreCard card) {
+    if (card.suit < EUCHRE_CLUBS || card.suit > EUCHRE_SPADES ||
+        card.rank < EUCHRE_NINE || card.rank > EUCHRE_ACE) {
+        return -1;
+    }
+    return (int)card.suit * 6 + (int)card.rank;
+}
+
+/* Convert a stable deck ID back to its suit and rank representation. */
+EuchreCard euchre_card_from_id(int card_id) {
+    if (card_id < 0 || card_id >= EUCHRE_DECK_SIZE) {
+        return (EuchreCard){EUCHRE_NO_SUIT, EUCHRE_NINE};
+    }
+    return (EuchreCard){(EuchreSuit)(card_id / 6), (EuchreRank)(card_id % 6)};
 }
 
 /* Assign a comparable value to a card for the current lead and trump suit. */
@@ -269,6 +288,7 @@ bool euchre_play_card(EuchreGame *game, size_t hand_index, int *trick_winner) {
 
     EuchreHand *hand = &game->hands[player];
     game->trick[player] = hand->cards[hand_index];
+    game->cards_played[euchre_card_id(hand->cards[hand_index])] = true;
     game->trick_slot_used[player] = true;
     hand->cards[hand_index] = hand->cards[hand->count - 1];
     --hand->count;

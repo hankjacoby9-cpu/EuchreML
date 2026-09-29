@@ -1,4 +1,5 @@
 #include "euchre.h"
+#include "euchre_policy.h"
 #include "euchre_sim.h"
 
 #include <stdint.h>
@@ -18,6 +19,141 @@ static int failures;
             return;                                                             \
         }                                                                       \
     } while (0)
+
+/* Count enabled entries without depending only on the mask builder's return value. */
+static size_t count_mask(const bool legal[EUCHRE_ACTION_COUNT]) {
+    size_t count = 0;
+    for (int action = 0; action < EUCHRE_ACTION_COUNT; ++action) {
+        if (legal[action]) ++count;
+    }
+    return count;
+}
+
+/* Return the first enabled card action in a mask. */
+static EuchreAction first_card_action(
+    const bool legal[EUCHRE_ACTION_COUNT]) {
+    for (int card_id = 0; card_id < EUCHRE_DECK_SIZE; ++card_id) {
+        if (legal[card_id]) return (EuchreAction)card_id;
+    }
+    return EUCHRE_ACTION_INVALID;
+}
+
+/* Confirm the opening-bid and dealer-discard observations and masks. */
+static void test_round_one_and_discard_masks(void) {
+    EuchreGame game;
+    EuchreObservation observation;
+    bool legal[EUCHRE_ACTION_COUNT];
+    euchre_init(&game, 99);
+    euchre_deal(&game);
+
+    CHECK(euchre_observe(&game, game.current_player, &observation));
+    CHECK(observation.hand_count == EUCHRE_HAND_SIZE);
+    CHECK(observation.player == game.current_player);
+    CHECK(euchre_policy_legal_actions(&game, legal) == 3);
+    CHECK(count_mask(legal) == 3);
+    CHECK(legal[EUCHRE_ACTION_PASS]);
+    CHECK(legal[EUCHRE_ACTION_ORDER_UP]);
+    CHECK(legal[EUCHRE_ACTION_ORDER_UP_ALONE]);
+    CHECK(!euchre_apply_action(&game, EUCHRE_ACTION_CALL_CLUBS));
+
+    CHECK(euchre_apply_action(&game, EUCHRE_ACTION_ORDER_UP));
+    CHECK(game.current_player == game.dealer);
+    CHECK(euchre_observe(&game, game.dealer, &observation));
+    CHECK(observation.hand_count == EUCHRE_HAND_SIZE + 1);
+    CHECK(euchre_policy_legal_actions(&game, legal) == EUCHRE_HAND_SIZE + 1);
+    CHECK(count_mask(legal) == EUCHRE_HAND_SIZE + 1);
+    CHECK(!legal[EUCHRE_ACTION_PASS]);
+    CHECK(!legal[EUCHRE_ACTION_ORDER_UP]);
+    for (size_t i = 0; i < game.hands[game.dealer].count; ++i) {
+        CHECK(legal[euchre_card_id(game.hands[game.dealer].cards[i])]);
+    }
+}
+
+/* Confirm ordinary and stick-the-dealer masks during second-round bidding. */
+static void test_round_two_masks(void) {
+    EuchreGame game;
+    EuchreObservation observation;
+    bool legal[EUCHRE_ACTION_COUNT];
+    euchre_init(&game, 100);
+    euchre_deal(&game);
+
+    for (int i = 0; i < EUCHRE_PLAYERS; ++i) {
+        CHECK(euchre_apply_action(&game, EUCHRE_ACTION_PASS));
+    }
+    CHECK(euchre_observe(&game, game.current_player, &observation));
+    CHECK(observation.phase == EUCHRE_BIDDING_ROUND_TWO);
+    CHECK(observation.bid_turns == 0);
+    CHECK(euchre_policy_legal_actions(&game, legal) == 7);
+    CHECK(count_mask(legal) == 7);
+    CHECK(legal[EUCHRE_ACTION_PASS]);
+
+    for (int suit = EUCHRE_CLUBS; suit <= EUCHRE_SPADES; ++suit) {
+        bool expected = (EuchreSuit)suit != game.turned_suit;
+        CHECK(legal[EUCHRE_ACTION_CALL_CLUBS + suit] == expected);
+        CHECK(legal[EUCHRE_ACTION_CALL_CLUBS_ALONE + suit] == expected);
+    }
+
+    for (int i = 0; i < EUCHRE_PLAYERS - 1; ++i) {
+        CHECK(euchre_apply_action(&game, EUCHRE_ACTION_PASS));
+    }
+    CHECK(game.current_player == game.dealer);
+    CHECK(euchre_policy_legal_actions(&game, legal) == 6);
+    CHECK(count_mask(legal) == 6);
+    CHECK(!legal[EUCHRE_ACTION_PASS]);
+    CHECK(!euchre_apply_action(&game, EUCHRE_ACTION_PASS));
+}
+
+/* Confirm play masks follow suit and observations update after each card. */
+static void test_play_and_complete_masks(void) {
+    EuchreGame game;
+    EuchreObservation observation;
+    bool legal[EUCHRE_ACTION_COUNT];
+    euchre_init(&game, 404);
+    euchre_deal(&game);
+
+    CHECK(euchre_apply_action(&game, EUCHRE_ACTION_ORDER_UP));
+    CHECK(euchre_policy_legal_actions(&game, legal) == EUCHRE_HAND_SIZE + 1);
+    CHECK(euchre_apply_action(&game, first_card_action(legal)));
+    CHECK(game.phase == EUCHRE_PLAYING);
+
+    int leader = game.current_player;
+    CHECK(euchre_observe(&game, leader, &observation));
+    CHECK(observation.phase == EUCHRE_PLAYING);
+    CHECK(observation.hand_count == EUCHRE_HAND_SIZE);
+    CHECK(euchre_policy_legal_actions(&game, legal) == EUCHRE_HAND_SIZE);
+    CHECK(count_mask(legal) == EUCHRE_HAND_SIZE);
+
+    EuchreAction led_action = first_card_action(legal);
+    CHECK(led_action != EUCHRE_ACTION_INVALID);
+    CHECK(euchre_apply_action(&game, led_action));
+    CHECK(euchre_observe(&game, game.current_player, &observation));
+    CHECK(observation.cards_played[led_action]);
+    CHECK(observation.trick_slot_used[leader]);
+    CHECK(euchre_card_id(observation.trick[leader]) == led_action);
+
+    EuchreSuit led_suit = euchre_effective_suit(game.trick[leader], game.trump);
+    size_t following_cards = 0;
+    const EuchreHand *hand = &game.hands[game.current_player];
+    for (size_t i = 0; i < hand->count; ++i) {
+        if (euchre_effective_suit(hand->cards[i], game.trump) == led_suit) {
+            ++following_cards;
+        }
+    }
+    size_t expected_legal = following_cards == 0 ? hand->count : following_cards;
+    CHECK(euchre_policy_legal_actions(&game, legal) == expected_legal);
+    CHECK(count_mask(legal) == expected_legal);
+
+    while (game.phase == EUCHRE_PLAYING) {
+        CHECK(euchre_policy_legal_actions(&game, legal) > 0);
+        CHECK(euchre_apply_action(&game, first_card_action(legal)));
+    }
+
+    CHECK(game.phase == EUCHRE_HAND_COMPLETE);
+    CHECK(euchre_observe(&game, game.current_player, &observation));
+    CHECK(observation.phase == EUCHRE_HAND_COMPLETE);
+    CHECK(euchre_policy_legal_actions(&game, legal) == 0);
+    CHECK(count_mask(legal) == 0);
+}
 
 /* Confirm round two rejects the suit that was turned down in round one. */
 static void test_cannot_call_turned_suit(void) {
@@ -113,6 +249,9 @@ static void test_seeded_matches(void) {
 }
 
 int main(void) {
+    test_round_one_and_discard_masks();
+    test_round_two_masks();
+    test_play_and_complete_masks();
     test_cannot_call_turned_suit();
     test_stick_the_dealer();
     test_lone_hand_turn_order();

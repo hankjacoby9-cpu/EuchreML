@@ -6,8 +6,8 @@ CPPFLAGS ?= -Iinclude
 
 all: build/euchre_demo
 
-ENGINE_SOURCES = src/euchre.c src/euchre_sim.c
-ENGINE_HEADERS = include/euchre.h include/euchre_sim.h
+ENGINE_SOURCES = src/euchre.c src/euchre_policy.c src/euchre_sim.c
+ENGINE_HEADERS = include/euchre.h include/euchre_policy.h include/euchre_sim.h
 
 build/euchre_demo: $(ENGINE_SOURCES) src/main.c $(ENGINE_HEADERS)
 	@mkdir -p build

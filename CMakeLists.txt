@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-add_library(euchre_engine src/euchre.c src/euchre_sim.c)
+add_library(euchre_engine src/euchre.c src/euchre_policy.c src/euchre_sim.c)
 target_include_directories(euchre_engine PUBLIC include)
 target_compile_options(euchre_engine PRIVATE -Wall -Wextra -Wpedantic)
 

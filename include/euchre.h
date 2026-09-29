@@ -51,6 +51,7 @@ typedef struct {
     EuchreCard kitty[EUCHRE_KITTY_SIZE];
     EuchreCard trick[EUCHRE_PLAYERS];
     bool trick_slot_used[EUCHRE_PLAYERS];
+    bool cards_played[EUCHRE_DECK_SIZE];
     int dealer;
     int current_player;
     int leader;
@@ -83,6 +84,9 @@ bool euchre_dealer_discard(EuchreGame *game, size_t hand_index);
 
 /* Resolve the left bower's suit, validate actions, and expose legal choices. */
 EuchreSuit euchre_effective_suit(EuchreCard card, EuchreSuit trump);
+/* Convert cards to stable IDs 0-23 and back for policy actions and observations. */
+int euchre_card_id(EuchreCard card);
+EuchreCard euchre_card_from_id(int card_id);
 bool euchre_is_legal_play(const EuchreGame *game, int player, size_t hand_index);
 size_t euchre_legal_moves(const EuchreGame *game, int player,
                           size_t indices[EUCHRE_HAND_SIZE]);

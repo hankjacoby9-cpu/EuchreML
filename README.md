@@ -17,6 +17,7 @@ The engine currently implements:
 - complete matches to 10 points using intentionally simple players
 - deterministic simulations for comparing the same seeds
 - engine tests for bidding restrictions, lone hands, scoring, and full matches
+- interchangeable per-seat policies with stable actions and legal-action masks
 
 Match play to 10 points, interactive input, and the Python bridge are planned
 after the core hand logic is stable.
@@ -42,6 +43,8 @@ including attempts to call the turned-down suit during round two.
 
 ## Design boundary
 
-`EuchreGame` owns the rules and state. A player—heuristic, human, or learned—only
-needs to choose among the indices returned by `euchre_legal_moves`. This keeps
-illegal actions out of the ML layer and gives every future player the same API.
+`EuchreGame` owns the rules and complete state. Each `EuchrePolicy` receives an
+`EuchreObservation` containing only information available to its seat, plus a
+fixed-size legal-action mask. Card actions use permanent deck IDs rather than
+mutable hand positions. This gives heuristic, human, and learned players the
+same interface without exposing opponents' cards or the kitty.
