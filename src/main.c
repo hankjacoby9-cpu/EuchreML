@@ -1,81 +1,37 @@
 #include "euchre.h"
+#include "euchre_sim.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 
-/* Estimate hand strength for bidding by counting cards that act as a suit. */
-static int count_suit(const EuchreHand *hand, EuchreSuit suit) {
-    int count = 0;
-    for (size_t i = 0; i < hand->count; ++i) {
-        if (euchre_effective_suit(hand->cards[i], suit) == suit) ++count;
-    }
-    return count;
-}
+#define WINNING_SCORE 10
 
-/* Drive both bidding rounds with a deliberately simple suit-count strategy. */
-static void run_simple_bidding(EuchreGame *game) {
-    while (game->phase == EUCHRE_BIDDING_ROUND_ONE) {
-        int player = game->current_player;
-        if (count_suit(&game->hands[player], game->turned_suit) >= 2) {
-            euchre_order_up(game);
-            euchre_dealer_discard(game, 0);
-            return;
-        }
-        euchre_pass_bid(game);
-    }
-
-    while (game->phase == EUCHRE_BIDDING_ROUND_TWO) {
-        int player = game->current_player;
-        EuchreSuit best_suit = EUCHRE_NO_SUIT;
-        int best_count = -1;
-        for (int suit = EUCHRE_CLUBS; suit <= EUCHRE_SPADES; ++suit) {
-            if ((EuchreSuit)suit == game->turned_suit) continue;
-            int count = count_suit(&game->hands[player], (EuchreSuit)suit);
-            if (count > best_count) {
-                best_count = count;
-                best_suit = (EuchreSuit)suit;
-            }
-        }
-        if (best_count >= 2 || player == game->dealer) {
-            euchre_call_trump(game, best_suit);
-            return;
-        }
-        euchre_pass_bid(game);
-    }
-}
-
-/* Deal and print one complete demonstration hand using simple automated players. */
+/* Play a complete demonstration match and summarize every hand. */
 int main(void) {
+    uint64_t seed = (uint64_t)time(NULL);
+    uint64_t bot_state = seed ^ UINT64_C(0x9e3779b97f4a7c15);
     EuchreGame game;
-    euchre_init(&game, (uint64_t)time(NULL));
-    euchre_deal(&game);
+    euchre_init(&game, seed);
 
-    char upcard[32];
-    euchre_card_string(game.kitty[0], upcard, sizeof(upcard));
-    printf("Dealer: Player %d | Upcard: %s\n", game.dealer, upcard);
+    int hand_number = 0;
+    while (game.score[0] < WINNING_SCORE && game.score[1] < WINNING_SCORE) {
+        int previous_score[2] = {game.score[0], game.score[1]};
+        if (!euchre_play_simple_hand(&game, &bot_state)) {
+            fprintf(stderr, "The simulation reached an invalid game state.\n");
+            return 1;
+        }
 
-    run_simple_bidding(&game);
-    printf("Player %d called %s for Team %d\n\n", game.caller,
-           euchre_suit_name(game.trump), game.makers_team);
-
-    while (game.phase == EUCHRE_PLAYING) {
-        int player = game.current_player;
-        size_t legal[EUCHRE_HAND_SIZE];
-        size_t legal_count = euchre_legal_moves(&game, player, legal);
-        size_t choice = legal[rand() % legal_count];
-        EuchreCard played = game.hands[player].cards[choice];
-        int winner = -1;
-        euchre_play_card(&game, choice, &winner);
-
-        char card_name[32];
-        euchre_card_string(played, card_name, sizeof(card_name));
-        printf("Player %d plays %s\n", player, card_name);
-        if (winner >= 0) printf("Player %d wins the trick\n\n", winner);
+        ++hand_number;
+        int scoring_team = game.score[0] > previous_score[0] ? 0 : 1;
+        int points = game.score[scoring_team] - previous_score[scoring_team];
+        printf("Hand %2d: Player %d called %-8s%s | Team %d +%d | score %d-%d\n",
+               hand_number, game.caller, euchre_suit_name(game.trump),
+               game.going_alone ? " alone" : "      ", scoring_team, points,
+               game.score[0], game.score[1]);
     }
 
-    printf("Tricks: Team 0 = %d, Team 1 = %d\n", game.tricks_won[0],
-           game.tricks_won[1]);
-    printf("Score:  Team 0 = %d, Team 1 = %d\n", game.score[0], game.score[1]);
+    int winner = game.score[0] >= WINNING_SCORE ? 0 : 1;
+    printf("\nTeam %d wins the match %d-%d after %d hands.\n", winner,
+           game.score[0], game.score[1], hand_number);
     return 0;
 }

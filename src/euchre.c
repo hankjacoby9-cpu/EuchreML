@@ -29,10 +29,25 @@ static int next_player(int player) {
     return (player + 1) % EUCHRE_PLAYERS;
 }
 
-/* Reset trick state and give the opening lead to the player left of the dealer. */
+/* Move clockwise while skipping the caller's partner during a lone hand. */
+static int next_active_player(const EuchreGame *game, int player) {
+    int next = next_player(player);
+    if (game->going_alone && next == game->sitting_out) {
+        next = next_player(next);
+    }
+    return next;
+}
+
+/* Store whether the caller is alone and identify the partner who must sit out. */
+static void set_lone_hand(EuchreGame *game, bool go_alone) {
+    game->going_alone = go_alone;
+    game->sitting_out = go_alone ? (game->caller + 2) % EUCHRE_PLAYERS : -1;
+}
+
+/* Reset trick state and give the opening lead to the first active player. */
 static void begin_play(EuchreGame *game) {
     game->phase = EUCHRE_PLAYING;
-    game->leader = next_player(game->dealer);
+    game->leader = next_active_player(game, game->dealer);
     game->current_player = game->leader;
     game->trick_plays = 0;
     game->tricks_played = 0;
@@ -89,17 +104,22 @@ void euchre_deal(EuchreGame *game) {
     game->trump = EUCHRE_NO_SUIT;
     game->caller = -1;
     game->makers_team = -1;
+    game->sitting_out = -1;
+    game->going_alone = false;
     game->bid_turns = 0;
     game->current_player = next_player(game->dealer);
     game->phase = EUCHRE_BIDDING_ROUND_ONE;
 }
 
-/* Accept a first-round bid and require the dealer to pick up the turned card. */
-bool euchre_order_up(EuchreGame *game) {
-    if (game->phase != EUCHRE_BIDDING_ROUND_ONE) return false;
+/* Accept a first-round bid, including a lone bid, and give the dealer the upcard. */
+bool euchre_order_up(EuchreGame *game, bool go_alone) {
+    if (game->phase != EUCHRE_BIDDING_ROUND_ONE || game->trump != EUCHRE_NO_SUIT) {
+        return false;
+    }
     game->caller = game->current_player;
     game->makers_team = game->caller % 2;
     game->trump = game->turned_suit;
+    set_lone_hand(game, go_alone);
 
     EuchreHand *dealer_hand = &game->hands[game->dealer];
     dealer_hand->cards[dealer_hand->count++] = game->kitty[0];
@@ -146,8 +166,8 @@ bool euchre_pass_bid(EuchreGame *game) {
     return true;
 }
 
-/* Accept a legal second-round trump choice and start the five tricks. */
-bool euchre_call_trump(EuchreGame *game, EuchreSuit suit) {
+/* Accept a legal second-round trump choice, including a lone bid, and start play. */
+bool euchre_call_trump(EuchreGame *game, EuchreSuit suit, bool go_alone) {
     if (game->phase != EUCHRE_BIDDING_ROUND_TWO || suit < EUCHRE_CLUBS ||
         suit > EUCHRE_SPADES || suit == game->turned_suit) {
         return false;
@@ -155,6 +175,7 @@ bool euchre_call_trump(EuchreGame *game, EuchreSuit suit) {
     game->caller = game->current_player;
     game->makers_team = game->caller % 2;
     game->trump = suit;
+    set_lone_hand(game, go_alone);
     begin_play(game);
     return true;
 }
@@ -212,7 +233,7 @@ size_t euchre_legal_moves(const EuchreGame *game, int player,
     return count;
 }
 
-/* Compare all four played cards and return the seat that won the trick. */
+/* Compare every played card and return the active seat that won the trick. */
 static int resolve_trick(const EuchreGame *game) {
     EuchreSuit led = euchre_effective_suit(game->trick[game->leader], game->trump);
     int winner = game->leader;
@@ -228,11 +249,11 @@ static int resolve_trick(const EuchreGame *game) {
     return winner;
 }
 
-/* Award points after five tricks based on whether the makers made their bid. */
+/* Award points, including the four-point bonus for a lone five-trick march. */
 static void score_hand(EuchreGame *game) {
     int maker_tricks = game->tricks_won[game->makers_team];
     if (maker_tricks == 5) {
-        game->score[game->makers_team] += 2;
+        game->score[game->makers_team] += game->going_alone ? 4 : 2;
     } else if (maker_tricks >= 3) {
         game->score[game->makers_team] += 1;
     } else {
@@ -253,8 +274,9 @@ bool euchre_play_card(EuchreGame *game, size_t hand_index, int *trick_winner) {
     --hand->count;
     ++game->trick_plays;
 
-    if (game->trick_plays < EUCHRE_PLAYERS) {
-        game->current_player = next_player(player);
+    int players_in_trick = game->going_alone ? EUCHRE_PLAYERS - 1 : EUCHRE_PLAYERS;
+    if (game->trick_plays < players_in_trick) {
+        game->current_player = next_active_player(game, player);
         if (trick_winner != NULL) *trick_winner = -1;
         return true;
     }

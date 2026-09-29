@@ -10,13 +10,16 @@ The engine currently implements:
 - a 24-card Euchre deck and four five-card hands
 - two-round bidding with stick-the-dealer
 - dealer pickup and discard after an order-up
+- going alone, partner sit-out behavior, and lone-hand scoring
 - right and left bower suit behavior
 - follow-suit validation and legal-move generation
 - trick resolution and standard four-player scoring
-- a small command-line simulation using intentionally simple players
+- complete matches to 10 points using intentionally simple players
+- deterministic simulations for comparing the same seeds
+- engine tests for bidding restrictions, lone hands, scoring, and full matches
 
-Going alone, match play to 10 points, interactive input, and the Python bridge
-are planned after the core four-player hand is stable.
+Match play to 10 points, interactive input, and the Python bridge are planned
+after the core hand logic is stable.
 
 ## Build and run
 
@@ -26,6 +29,16 @@ make run
 
 CMake is also supported with `cmake -S . -B build` followed by
 `cmake --build build`.
+
+## Test
+
+```sh
+make test
+```
+
+The test executable runs complete matches for several fixed seeds and checks
+the engine's state after every hand. It also directly checks illegal bidding,
+including attempts to call the turned-down suit during round two.
 
 ## Design boundary
 

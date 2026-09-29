@@ -60,7 +60,9 @@ typedef struct {
     int tricks_won[2];
     int makers_team;
     int caller;
+    int sitting_out;
     int score[2];
+    bool going_alone;
     EuchreSuit trump;
     EuchreSuit turned_suit;
     EuchrePhase phase;
@@ -71,11 +73,11 @@ void euchre_init(EuchreGame *game, uint64_t seed);
 /* Rotate the dealer and deal a new hand, preserving the match score. */
 void euchre_deal(EuchreGame *game);
 
-/* First-round bidding actions. Ordering up leaves the dealer with six cards. */
-bool euchre_order_up(EuchreGame *game);
+/* First-round bidding action. Ordering up leaves the dealer with six cards. */
+bool euchre_order_up(EuchreGame *game, bool go_alone);
 bool euchre_pass_bid(EuchreGame *game);
 /* Second-round bidding action; the turned-down suit cannot be selected. */
-bool euchre_call_trump(EuchreGame *game, EuchreSuit suit);
+bool euchre_call_trump(EuchreGame *game, EuchreSuit suit, bool go_alone);
 /* Return the dealer to five cards after an order-up and begin trick play. */
 bool euchre_dealer_discard(EuchreGame *game, size_t hand_index);
 
@@ -84,7 +86,7 @@ EuchreSuit euchre_effective_suit(EuchreCard card, EuchreSuit trump);
 bool euchre_is_legal_play(const EuchreGame *game, int player, size_t hand_index);
 size_t euchre_legal_moves(const EuchreGame *game, int player,
                           size_t indices[EUCHRE_HAND_SIZE]);
-/* Apply one play; trick_winner is -1 until the fourth card completes the trick. */
+/* Apply one play; trick_winner stays -1 until every active player has played. */
 bool euchre_play_card(EuchreGame *game, size_t hand_index, int *trick_winner);
 
 /* Helpers for displaying enums and cards without exposing formatting details. */
