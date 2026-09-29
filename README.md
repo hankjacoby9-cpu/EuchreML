@@ -1,4 +1,4 @@
-# Euchre AI
+# EuchreML
 
 A C11 Euchre engine intended for fast simulation, with a future Python layer for
 training and evaluating learned players.
