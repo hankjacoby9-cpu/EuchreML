@@ -145,6 +145,11 @@ static void test_card_conservation(void) {
     CHECK(game.kitty_count == EUCHRE_KITTY_SIZE);
     CHECK(cards_are_conserved(&game));
     CHECK(euchre_apply_action(&game, EUCHRE_ACTION_ORDER_UP));
+    CHECK(game.bid_history_count == 1);
+    CHECK(game.bid_history[0].action == EUCHRE_BID_ORDER_UP);
+    CHECK(game.bid_history[0].round == 1);
+    CHECK(game.bid_history[0].suit == game.turned_suit);
+    CHECK(!game.bid_history[0].going_alone);
     CHECK(game.kitty_count == EUCHRE_KITTY_SIZE - 1);
     CHECK(cards_are_conserved(&game));
 
@@ -159,6 +164,57 @@ static void test_card_conservation(void) {
         CHECK(euchre_policy_legal_actions(&game, legal) > 0);
         CHECK(euchre_apply_action(&game, first_card_action(legal)));
         CHECK(cards_are_conserved(&game));
+    }
+}
+
+/* Confirm bidding events retain their actor, round, action, and selected suit. */
+static void test_bidding_history(void) {
+    EuchreGame game;
+    EuchreObservation observation;
+    bool legal[EUCHRE_ACTION_COUNT];
+    euchre_init(&game, 707);
+    euchre_deal(&game);
+    int first_bidder = game.current_player;
+
+    for (int i = 0; i < EUCHRE_PLAYERS; ++i) {
+        CHECK(euchre_apply_action(&game, EUCHRE_ACTION_PASS));
+        CHECK(game.bid_history[i].player == (first_bidder + i) % EUCHRE_PLAYERS);
+        CHECK(game.bid_history[i].round == 1);
+        CHECK(game.bid_history[i].action == EUCHRE_BID_PASS);
+        CHECK(game.bid_history[i].suit == EUCHRE_NO_SUIT);
+    }
+
+    for (int i = 0; i < 2; ++i) {
+        CHECK(euchre_apply_action(&game, EUCHRE_ACTION_PASS));
+    }
+    CHECK(euchre_policy_legal_actions(&game, legal) == 7);
+    EuchreAction call = EUCHRE_ACTION_INVALID;
+    for (int suit = EUCHRE_CLUBS; suit <= EUCHRE_SPADES; ++suit) {
+        EuchreAction candidate = (EuchreAction)(EUCHRE_ACTION_CALL_CLUBS + suit);
+        if (legal[candidate]) {
+            call = candidate;
+            break;
+        }
+    }
+    CHECK(call != EUCHRE_ACTION_INVALID);
+    int caller = game.current_player;
+    CHECK(euchre_apply_action(&game, call));
+    CHECK(game.bid_history_count == 7);
+
+    EuchreBidRecord final_bid = game.bid_history[6];
+    CHECK(final_bid.player == caller);
+    CHECK(final_bid.round == 2);
+    CHECK(final_bid.action == EUCHRE_BID_CALL_TRUMP);
+    CHECK(final_bid.suit == (EuchreSuit)(call - EUCHRE_ACTION_CALL_CLUBS));
+    CHECK(!final_bid.going_alone);
+
+    CHECK(euchre_observe(&game, game.current_player, &observation));
+    CHECK(observation.bid_history_count == game.bid_history_count);
+    for (size_t i = 0; i < observation.bid_history_count; ++i) {
+        CHECK(observation.bid_history[i].player == game.bid_history[i].player);
+        CHECK(observation.bid_history[i].round == game.bid_history[i].round);
+        CHECK(observation.bid_history[i].action == game.bid_history[i].action);
+        CHECK(observation.bid_history[i].suit == game.bid_history[i].suit);
     }
 }
 
@@ -254,6 +310,9 @@ static void test_play_and_complete_masks(void) {
     CHECK(observation.cards_played[led_action]);
     CHECK(observation.trick_slot_used[leader]);
     CHECK(euchre_card_id(observation.trick[leader]) == led_action);
+    CHECK(observation.trick_leaders[0] == leader);
+    CHECK(observation.trick_history_used[0][leader]);
+    CHECK(euchre_card_id(observation.trick_history[0][leader]) == led_action);
 
     EuchreSuit led_suit = euchre_effective_suit(game.trick[leader], game.trump);
     size_t following_cards = 0;
@@ -277,6 +336,19 @@ static void test_play_and_complete_masks(void) {
     CHECK(observation.phase == EUCHRE_HAND_COMPLETE);
     CHECK(euchre_policy_legal_actions(&game, legal) == 0);
     CHECK(count_mask(legal) == 0);
+    for (int trick = 0; trick < EUCHRE_HAND_SIZE; ++trick) {
+        CHECK(observation.trick_leaders[trick] >= 0);
+        CHECK(observation.trick_winners[trick] >= 0);
+        if (trick > 0) {
+            CHECK(observation.trick_leaders[trick] ==
+                  observation.trick_winners[trick - 1]);
+        }
+        int cards_in_trick = 0;
+        for (int player = 0; player < EUCHRE_PLAYERS; ++player) {
+            if (observation.trick_history_used[trick][player]) ++cards_in_trick;
+        }
+        CHECK(cards_in_trick == EUCHRE_PLAYERS);
+    }
 }
 
 /* Confirm round two rejects the suit that was turned down in round one. */
@@ -333,6 +405,14 @@ static void test_lone_hand_turn_order(void) {
     CHECK(plays == 15);
     CHECK(game.tricks_won[0] + game.tricks_won[1] == EUCHRE_HAND_SIZE);
     CHECK(game.hands[game.sitting_out].count == EUCHRE_HAND_SIZE);
+    for (int trick = 0; trick < EUCHRE_HAND_SIZE; ++trick) {
+        CHECK(!game.trick_history_used[trick][game.sitting_out]);
+        int cards_in_trick = 0;
+        for (int player = 0; player < EUCHRE_PLAYERS; ++player) {
+            if (game.trick_history_used[trick][player]) ++cards_in_trick;
+        }
+        CHECK(cards_in_trick == EUCHRE_PLAYERS - 1);
+    }
 }
 
 /* Run a complete match and check scoring and hand invariants after every deal. */
@@ -376,6 +456,7 @@ int main(void) {
     test_exact_scoring();
     test_per_game_random_state();
     test_card_conservation();
+    test_bidding_history();
     test_round_one_and_discard_masks();
     test_round_two_masks();
     test_play_and_complete_masks();

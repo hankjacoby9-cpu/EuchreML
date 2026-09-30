@@ -32,6 +32,17 @@ bool euchre_observe(const EuchreGame *game, int player,
     memcpy(observation->trick, game->trick, sizeof(observation->trick));
     memcpy(observation->trick_slot_used, game->trick_slot_used,
            sizeof(observation->trick_slot_used));
+    memcpy(observation->bid_history, game->bid_history,
+           sizeof(observation->bid_history));
+    observation->bid_history_count = game->bid_history_count;
+    memcpy(observation->trick_history, game->trick_history,
+           sizeof(observation->trick_history));
+    memcpy(observation->trick_history_used, game->trick_history_used,
+           sizeof(observation->trick_history_used));
+    memcpy(observation->trick_leaders, game->trick_leaders,
+           sizeof(observation->trick_leaders));
+    memcpy(observation->trick_winners, game->trick_winners,
+           sizeof(observation->trick_winners));
     memcpy(observation->cards_played, game->cards_played,
            sizeof(observation->cards_played));
     observation->dealer = game->dealer;

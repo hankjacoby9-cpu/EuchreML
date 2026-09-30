@@ -19,6 +19,7 @@ The engine currently implements:
 - engine tests for bidding restrictions, lone hands, scoring, and full matches
 - interchangeable per-seat policies with stable actions and legal-action masks
 - independent per-game random state for parallel simulations
+- public bidding and per-seat trick history for strategic inference
 
 Match play to 10 points, interactive input, and the Python bridge are planned
 after the core hand logic is stable.

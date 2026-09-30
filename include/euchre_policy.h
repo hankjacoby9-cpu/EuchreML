@@ -31,6 +31,12 @@ typedef struct {
     EuchreCard upcard;
     EuchreCard trick[EUCHRE_PLAYERS];
     bool trick_slot_used[EUCHRE_PLAYERS];
+    EuchreBidRecord bid_history[EUCHRE_MAX_BIDS];
+    size_t bid_history_count;
+    EuchreCard trick_history[EUCHRE_HAND_SIZE][EUCHRE_PLAYERS];
+    bool trick_history_used[EUCHRE_HAND_SIZE][EUCHRE_PLAYERS];
+    int trick_leaders[EUCHRE_HAND_SIZE];
+    int trick_winners[EUCHRE_HAND_SIZE];
     bool cards_played[EUCHRE_DECK_SIZE];
     int player;
     int dealer;

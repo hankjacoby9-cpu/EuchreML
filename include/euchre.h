@@ -10,6 +10,7 @@
 #define EUCHRE_HAND_CAPACITY 6
 #define EUCHRE_DECK_SIZE 24
 #define EUCHRE_KITTY_SIZE 4
+#define EUCHRE_MAX_BIDS 8
 
 typedef enum {
     EUCHRE_CLUBS,
@@ -46,6 +47,21 @@ typedef enum {
     EUCHRE_HAND_COMPLETE
 } EuchrePhase;
 
+typedef enum {
+    EUCHRE_BID_PASS,
+    EUCHRE_BID_ORDER_UP,
+    EUCHRE_BID_CALL_TRUMP
+} EuchreBidAction;
+
+/* One public bidding event, retained in the order in which it occurred. */
+typedef struct {
+    int player;
+    int round;
+    EuchreBidAction action;
+    EuchreSuit suit;
+    bool going_alone;
+} EuchreBidRecord;
+
 typedef struct {
     EuchreHand hands[EUCHRE_PLAYERS];
     EuchreCard kitty[EUCHRE_KITTY_SIZE];
@@ -53,6 +69,12 @@ typedef struct {
     EuchreCard upcard;
     EuchreCard trick[EUCHRE_PLAYERS];
     bool trick_slot_used[EUCHRE_PLAYERS];
+    EuchreBidRecord bid_history[EUCHRE_MAX_BIDS];
+    size_t bid_history_count;
+    EuchreCard trick_history[EUCHRE_HAND_SIZE][EUCHRE_PLAYERS];
+    bool trick_history_used[EUCHRE_HAND_SIZE][EUCHRE_PLAYERS];
+    int trick_leaders[EUCHRE_HAND_SIZE];
+    int trick_winners[EUCHRE_HAND_SIZE];
     bool cards_played[EUCHRE_DECK_SIZE];
     int dealer;
     int current_player;

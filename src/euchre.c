@@ -42,6 +42,18 @@ static void set_lone_hand(EuchreGame *game, bool go_alone) {
     game->sitting_out = go_alone ? (game->caller + 2) % EUCHRE_PLAYERS : -1;
 }
 
+/* Append one validated public bidding decision to the current hand's history. */
+static void record_bid(EuchreGame *game, EuchreBidAction action,
+                       EuchreSuit suit, bool going_alone) {
+    if (game->bid_history_count >= EUCHRE_MAX_BIDS) return;
+    EuchreBidRecord *record = &game->bid_history[game->bid_history_count++];
+    record->player = game->current_player;
+    record->round = game->phase == EUCHRE_BIDDING_ROUND_ONE ? 1 : 2;
+    record->action = action;
+    record->suit = suit;
+    record->going_alone = going_alone;
+}
+
 /* Reset trick state and give the opening lead to the first active player. */
 static void begin_play(EuchreGame *game) {
     game->phase = EUCHRE_PLAYING;
@@ -52,7 +64,14 @@ static void begin_play(EuchreGame *game) {
     game->tricks_won[0] = 0;
     game->tricks_won[1] = 0;
     memset(game->trick_slot_used, 0, sizeof(game->trick_slot_used));
+    memset(game->trick_history, 0, sizeof(game->trick_history));
+    memset(game->trick_history_used, 0, sizeof(game->trick_history_used));
     memset(game->cards_played, 0, sizeof(game->cards_played));
+    for (int trick = 0; trick < EUCHRE_HAND_SIZE; ++trick) {
+        game->trick_leaders[trick] = -1;
+        game->trick_winners[trick] = -1;
+    }
+    game->trick_leaders[0] = game->leader;
 }
 
 /* Initialize persistent game state and seed repeatable shuffles for simulations. */
@@ -108,6 +127,8 @@ void euchre_deal(EuchreGame *game) {
     game->sitting_out = -1;
     game->going_alone = false;
     game->bid_turns = 0;
+    game->bid_history_count = 0;
+    memset(game->bid_history, 0, sizeof(game->bid_history));
     game->current_player = next_player(game->dealer);
     game->phase = EUCHRE_BIDDING_ROUND_ONE;
     memset(game->cards_played, 0, sizeof(game->cards_played));
@@ -122,6 +143,7 @@ bool euchre_order_up(EuchreGame *game, bool go_alone) {
     game->makers_team = game->caller % 2;
     game->trump = game->turned_suit;
     set_lone_hand(game, go_alone);
+    record_bid(game, EUCHRE_BID_ORDER_UP, game->trump, go_alone);
 
     EuchreHand *dealer_hand = &game->hands[game->dealer];
     dealer_hand->cards[dealer_hand->count++] = game->upcard;
@@ -159,6 +181,7 @@ bool euchre_pass_bid(EuchreGame *game) {
         return false;
     }
 
+    record_bid(game, EUCHRE_BID_PASS, EUCHRE_NO_SUIT, false);
     ++game->bid_turns;
     if (game->bid_turns == EUCHRE_PLAYERS) {
         if (game->phase == EUCHRE_BIDDING_ROUND_ONE) {
@@ -182,6 +205,7 @@ bool euchre_call_trump(EuchreGame *game, EuchreSuit suit, bool go_alone) {
     game->makers_team = game->caller % 2;
     game->trump = suit;
     set_lone_hand(game, go_alone);
+    record_bid(game, EUCHRE_BID_CALL_TRUMP, suit, go_alone);
     begin_play(game);
     return true;
 }
@@ -310,6 +334,8 @@ bool euchre_play_card(EuchreGame *game, size_t hand_index, int *trick_winner) {
 
     EuchreHand *hand = &game->hands[player];
     game->trick[player] = hand->cards[hand_index];
+    game->trick_history[game->tricks_played][player] = hand->cards[hand_index];
+    game->trick_history_used[game->tricks_played][player] = true;
     game->cards_played[euchre_card_id(hand->cards[hand_index])] = true;
     game->trick_slot_used[player] = true;
     hand->cards[hand_index] = hand->cards[hand->count - 1];
@@ -324,6 +350,7 @@ bool euchre_play_card(EuchreGame *game, size_t hand_index, int *trick_winner) {
     }
 
     int winner = resolve_trick(game);
+    game->trick_winners[game->tricks_played] = winner;
     ++game->tricks_won[winner % 2];
     ++game->tricks_played;
     if (trick_winner != NULL) *trick_winner = winner;
@@ -333,6 +360,7 @@ bool euchre_play_card(EuchreGame *game, size_t hand_index, int *trick_winner) {
     } else {
         game->leader = winner;
         game->current_player = winner;
+        game->trick_leaders[game->tricks_played] = winner;
         game->trick_plays = 0;
         memset(game->trick_slot_used, 0, sizeof(game->trick_slot_used));
     }
