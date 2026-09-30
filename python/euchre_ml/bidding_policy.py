@@ -26,9 +26,9 @@ PARAMETER_NAMES = (
     "off_suit_aces",
     "void_suits",
     "represented_suits",
-    "upcard_strength_self_dealer",
-    "upcard_strength_partner_dealer",
-    "upcard_strength_opponent_dealer",
+    "upcard_trump_strength_self_dealer",
+    "upcard_trump_strength_partner_dealer",
+    "upcard_trump_strength_opponent_dealer",
     "self_is_dealer",
     "partner_is_dealer",
     "opponent_is_dealer",
@@ -37,6 +37,7 @@ PARAMETER_NAMES = (
     "alone_threshold",
 )
 GENOME_SIZE = len(PARAMETER_NAMES)
+BIDDING_FEATURE_VERSION = 2
 
 INITIAL_GENOME = np.asarray(
     [2.5, 2.0, 0.9, 0.4, 0.6, 0.3, -0.1,
@@ -50,6 +51,16 @@ def _cards_in_hand(result: StepResult):
         card_id for card_id, present in enumerate(result.observation[20:44])
         if present
     ]
+
+
+def upcard_trump_strength(rank: int) -> float:
+    """Rank a turned-suit upcard from nine through right bower."""
+    if rank < 0 or rank > 5:
+        raise ValueError("card rank must be between 0 and 5")
+    # Printed rank order is 9, 10, J, Q, K, A. The jack becomes the right
+    # bower, so strategic trump order is 9, 10, Q, K, A, J.
+    strength_order = (1, 2, 6, 3, 4, 5)
+    return strength_order[rank] / 6.0
 
 
 def candidate_features(result: StepResult, trump: int) -> np.ndarray:
@@ -77,7 +88,7 @@ def candidate_features(result: StepResult, trump: int) -> np.ndarray:
 
     upcard_strength = 0.0
     if observation[8] == 0 and trump == observation[10]:
-        upcard_strength = (observation[11] % 6 + 1) / 6.0
+        upcard_strength = upcard_trump_strength(observation[11] % 6)
 
     dealer_self = int(dealer == player)
     dealer_partner = int(dealer == partner)
@@ -156,11 +167,20 @@ class BiddingPolicy:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez(path, genome=self.genome, parameter_names=PARAMETER_NAMES,
-                 **metadata)
+                 feature_version=BIDDING_FEATURE_VERSION, **metadata)
 
     @classmethod
     def load(cls, path: Union[str, Path]) -> "BiddingPolicy":
         with np.load(path) as checkpoint:
+            if "feature_version" not in checkpoint.files:
+                raise ValueError(
+                    "Legacy bidding checkpoint has unversioned upcard semantics"
+                )
+            version = int(checkpoint["feature_version"])
+            if version != BIDDING_FEATURE_VERSION:
+                raise ValueError(
+                    f"Unsupported bidding feature version {version}"
+                )
             return cls(checkpoint["genome"].copy())
 
 

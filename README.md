@@ -144,7 +144,9 @@ The 16-value genome contains named weights for bowers, trump count, high trump,
 off-suit aces, voids, represented suits, upcard/dealer relationships, and three
 calling thresholds. Evolution receives no calling bonus or behavioral penalty;
 selection uses only paired team score margin. Inspectable weights are printed
-after training and stored with the checkpoint.
+after training and stored with the checkpoint. Upcard strength follows Euchre
+trump order (`9 < 10 < Q < K < A < right bower`), and the feature layout is
+versioned so checkpoints cannot silently change meaning.
 
 ## Design boundary
 
