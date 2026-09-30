@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from euchre_ml import EuchreEnv, StepResult
+from euchre_ml import EuchreBatchEnv, EuchreEnv, StepResult
 
 
 @dataclass(frozen=True)
@@ -98,6 +98,36 @@ def run_interleaved_environments(episodes: int, environment_count: int) -> Bench
     return BenchmarkResult(episodes, decisions, seconds)
 
 
+def run_native_batch(episodes: int, environment_count: int) -> BenchmarkResult:
+    """Advance each complete environment wave through batched C calls."""
+    measured_episodes = (episodes // environment_count) * environment_count
+    if measured_episodes == 0:
+        raise ValueError("episodes must be at least the native batch size")
+
+    decisions = 0
+    with EuchreBatchEnv(environment_count) as batch:
+        start = time.perf_counter()
+        for episode_start in range(0, measured_episodes, environment_count):
+            episode_numbers = range(
+                episode_start, episode_start + environment_count
+            )
+            results = batch.reset(
+                seeds=[episode + 1 for episode in episode_numbers],
+                learning_seats=[episode % 4 for episode in episode_numbers],
+            )
+            while not all(result.done for result in results):
+                actions = []
+                for result in results:
+                    if result.done:
+                        actions.append(0)
+                    else:
+                        actions.append(first_legal(result))
+                        decisions += 1
+                results = batch.step(actions)
+        seconds = time.perf_counter() - start
+    return BenchmarkResult(measured_episodes, decisions, seconds)
+
+
 def print_result(label: str, result: BenchmarkResult) -> None:
     print(
         f"{label:<24} "
@@ -130,7 +160,11 @@ def main() -> None:
             f"interleaved x{batch_size}",
             run_interleaved_environments(args.episodes, batch_size),
         )
-    print("Interleaved modes still make one CFFI call per environment decision.")
+        print_result(
+            f"native batch x{batch_size}",
+            run_native_batch(args.episodes, batch_size),
+        )
+    print("Native modes cross CFFI once per batch step.")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,13 @@
 #include "euchre_bridge.h"
 
+#include <stdlib.h>
+
+struct EuchreBatchEnv {
+    size_t size;
+    EuchreEnv **envs;
+    int *statuses;
+};
+
 /* Encode one environment response only after the engine action succeeds. */
 static int encode_result(
     int status, const EuchreObservation *observation,
@@ -49,6 +57,95 @@ int euchre_bridge_step(
                                  legal_actions, reward);
     return encode_result(status, &observation, legal_actions,
                          output_observation, output_mask);
+}
+
+EuchreBatchEnv *euchre_bridge_batch_create(size_t environment_count) {
+    if (environment_count == 0) return NULL;
+
+    EuchreBatchEnv *batch = calloc(1, sizeof(*batch));
+    if (batch == NULL) return NULL;
+    batch->envs = calloc(environment_count, sizeof(*batch->envs));
+    batch->statuses = calloc(environment_count, sizeof(*batch->statuses));
+    if (batch->envs == NULL || batch->statuses == NULL) {
+        euchre_bridge_batch_destroy(batch);
+        return NULL;
+    }
+
+    batch->size = environment_count;
+    for (size_t index = 0; index < environment_count; ++index) {
+        batch->envs[index] = euchre_env_create();
+        if (batch->envs[index] == NULL) {
+            euchre_bridge_batch_destroy(batch);
+            return NULL;
+        }
+        batch->statuses[index] = EUCHRE_ENV_ERROR;
+    }
+    return batch;
+}
+
+void euchre_bridge_batch_destroy(EuchreBatchEnv *batch) {
+    if (batch == NULL) return;
+    if (batch->envs != NULL) {
+        for (size_t index = 0; index < batch->size; ++index) {
+            euchre_env_destroy(batch->envs[index]);
+        }
+    }
+    free(batch->statuses);
+    free(batch->envs);
+    free(batch);
+}
+
+size_t euchre_bridge_batch_size(const EuchreBatchEnv *batch) {
+    return batch == NULL ? 0 : batch->size;
+}
+
+int euchre_bridge_batch_reset(
+    EuchreBatchEnv *batch, const uint64_t seeds[], const int learning_seats[],
+    int16_t observations[], uint8_t action_masks[], int rewards[],
+    int statuses[]) {
+    if (batch == NULL || seeds == NULL || learning_seats == NULL ||
+        observations == NULL || action_masks == NULL || rewards == NULL ||
+        statuses == NULL) {
+        return 0;
+    }
+
+    int success = 1;
+    for (size_t index = 0; index < batch->size; ++index) {
+        int status = euchre_bridge_reset(
+            batch->envs[index], seeds[index], learning_seats[index],
+            observations + index * EUCHRE_OBSERVATION_SIZE,
+            action_masks + index * EUCHRE_ENCODED_ACTION_MASK_SIZE,
+            rewards + index);
+        batch->statuses[index] = status;
+        statuses[index] = status;
+        if (status == EUCHRE_ENV_ERROR) success = 0;
+    }
+    return success;
+}
+
+int euchre_bridge_batch_step(
+    EuchreBatchEnv *batch, const int actions[], int16_t observations[],
+    uint8_t action_masks[], int rewards[], int statuses[]) {
+    if (batch == NULL || actions == NULL || observations == NULL ||
+        action_masks == NULL || rewards == NULL || statuses == NULL) {
+        return 0;
+    }
+
+    int success = 1;
+    for (size_t index = 0; index < batch->size; ++index) {
+        int status = batch->statuses[index];
+        if (status == EUCHRE_ENV_DECISION) {
+            status = euchre_bridge_step(
+                batch->envs[index], actions[index],
+                observations + index * EUCHRE_OBSERVATION_SIZE,
+                action_masks + index * EUCHRE_ENCODED_ACTION_MASK_SIZE,
+                rewards + index);
+            batch->statuses[index] = status;
+        }
+        statuses[index] = status;
+        if (status == EUCHRE_ENV_ERROR) success = 0;
+    }
+    return success;
 }
 
 int euchre_bridge_layout_version(void) {

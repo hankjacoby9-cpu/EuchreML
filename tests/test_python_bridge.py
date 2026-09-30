@@ -1,6 +1,12 @@
 import unittest
 
-from euchre_ml import ACTION_COUNT, LAYOUT_VERSION, OBSERVATION_SIZE, EuchreEnv
+from euchre_ml import (
+    ACTION_COUNT,
+    LAYOUT_VERSION,
+    OBSERVATION_SIZE,
+    EuchreBatchEnv,
+    EuchreEnv,
+)
 
 
 class BridgeIntegrationTests(unittest.TestCase):
@@ -38,6 +44,45 @@ class BridgeIntegrationTests(unittest.TestCase):
             )
             with self.assertRaises(ValueError):
                 env.step(illegal)
+
+    def test_native_batch_completes_all_environments(self) -> None:
+        environment_count = 8
+        with EuchreBatchEnv(environment_count) as batch:
+            results = batch.reset(
+                seeds=range(1, environment_count + 1),
+                learning_seats=[index % 4 for index in range(environment_count)],
+            )
+            while not all(result.done for result in results):
+                actions = [
+                    0 if result.done else next(
+                        action
+                        for action, enabled in enumerate(result.action_mask)
+                        if enabled
+                    )
+                    for result in results
+                ]
+                results = batch.step(actions)
+
+            self.assertTrue(all(sum(result.action_mask) == 0 for result in results))
+            self.assertTrue(
+                all(result.reward in (-4, -2, -1, 1, 2, 4) for result in results)
+            )
+
+    def test_native_batch_validates_lengths_and_actions(self) -> None:
+        with EuchreBatchEnv(2) as batch:
+            with self.assertRaises(ValueError):
+                batch.reset([1], [0, 1])
+            results = batch.reset([1, 2], [0, 1])
+            actions = [
+                next(
+                    action
+                    for action, enabled in enumerate(result.action_mask)
+                    if not enabled
+                )
+                for result in results
+            ]
+            with self.assertRaises(ValueError):
+                batch.step(actions)
 
 
 if __name__ == "__main__":

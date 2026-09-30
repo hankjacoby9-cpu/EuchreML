@@ -62,8 +62,12 @@ baseline with:
 make benchmark-python
 ```
 
-The interleaved modes still perform one CFFI call per environment decision.
-They establish the baseline that a future native batch call must improve.
+The benchmark compares a single environment, Python-interleaved environments,
+and native batches. Interleaved modes perform one CFFI call per environment
+decision; native modes cross CFFI once for the whole batch. The current native
+batch uses synchronized episode waves and materializes every result as Python
+tuples. This intentionally provides a first implementation to measure before
+adding asynchronous slot resets and zero-copy NumPy buffer views.
 
 ## Design boundary
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Sequence, Tuple
 
 from ._native import ffi, lib
 
@@ -91,3 +91,115 @@ class EuchreEnv:
             reward=self._reward[0],
             done=status == _STATUS_TERMINAL,
         )
+
+
+class EuchreBatchEnv:
+    """Opaque C-owned environment batch advanced through one CFFI call."""
+
+    def __init__(self, environment_count: int) -> None:
+        if environment_count <= 0:
+            raise ValueError("environment_count must be positive")
+        self._batch = ffi.NULL
+        pointer = lib.euchre_bridge_batch_create(environment_count)
+        if pointer == ffi.NULL:
+            raise MemoryError("Unable to allocate Euchre environment batch")
+        self._batch = pointer
+        self.environment_count = environment_count
+        self._seeds = ffi.new("uint64_t[]", environment_count)
+        self._learning_seats = ffi.new("int[]", environment_count)
+        self._actions = ffi.new("int[]", environment_count)
+        self._observations = ffi.new(
+            "int16_t[]", environment_count * OBSERVATION_SIZE
+        )
+        self._action_masks = ffi.new(
+            "uint8_t[]", environment_count * ACTION_COUNT
+        )
+        self._rewards = ffi.new("int[]", environment_count)
+        self._statuses = ffi.new("int[]", environment_count)
+
+    def close(self) -> None:
+        if self._batch != ffi.NULL:
+            lib.euchre_bridge_batch_destroy(self._batch)
+            self._batch = ffi.NULL
+
+    def __enter__(self) -> "EuchreBatchEnv":
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        if hasattr(self, "_batch"):
+            self.close()
+
+    def reset(
+        self, seeds: Sequence[int], learning_seats: Sequence[int]
+    ) -> Tuple[StepResult, ...]:
+        self._require_open()
+        self._require_count(seeds, "seeds")
+        self._require_count(learning_seats, "learning_seats")
+        for index in range(self.environment_count):
+            self._seeds[index] = seeds[index]
+            self._learning_seats[index] = learning_seats[index]
+        success = lib.euchre_bridge_batch_reset(
+            self._batch,
+            self._seeds,
+            self._learning_seats,
+            self._observations,
+            self._action_masks,
+            self._rewards,
+            self._statuses,
+        )
+        return self._read_results(success)
+
+    def step(self, actions: Sequence[int]) -> Tuple[StepResult, ...]:
+        self._require_open()
+        self._require_count(actions, "actions")
+        for index, action in enumerate(actions):
+            self._actions[index] = action
+        success = lib.euchre_bridge_batch_step(
+            self._batch,
+            self._actions,
+            self._observations,
+            self._action_masks,
+            self._rewards,
+            self._statuses,
+        )
+        return self._read_results(success)
+
+    def _require_open(self) -> None:
+        if self._batch == ffi.NULL:
+            raise RuntimeError("Euchre environment batch is closed")
+
+    def _require_count(self, values: Sequence[int], name: str) -> None:
+        if len(values) != self.environment_count:
+            raise ValueError(
+                f"{name} must contain {self.environment_count} values"
+            )
+
+    def _read_results(self, success: int) -> Tuple[StepResult, ...]:
+        if not success:
+            raise ValueError("The C environment batch rejected an action")
+
+        results = []
+        for environment in range(self.environment_count):
+            status = self._statuses[environment]
+            if status not in (_STATUS_DECISION, _STATUS_TERMINAL):
+                raise RuntimeError(f"Unknown C environment status: {status}")
+            observation_start = environment * OBSERVATION_SIZE
+            mask_start = environment * ACTION_COUNT
+            results.append(
+                StepResult(
+                    observation=tuple(
+                        self._observations[observation_start + offset]
+                        for offset in range(OBSERVATION_SIZE)
+                    ),
+                    action_mask=tuple(
+                        self._action_masks[mask_start + offset]
+                        for offset in range(ACTION_COUNT)
+                    ),
+                    reward=self._rewards[environment],
+                    done=status == _STATUS_TERMINAL,
+                )
+            )
+        return tuple(results)

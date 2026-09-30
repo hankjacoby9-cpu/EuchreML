@@ -5,6 +5,9 @@
 #include "euchre_env.h"
 
 #include <stdint.h>
+#include <stddef.h>
+
+typedef struct EuchreBatchEnv EuchreBatchEnv;
 
 /* Opaque lifecycle functions exported to foreign-language bindings. */
 EuchreEnv *euchre_bridge_create(void);
@@ -20,6 +23,20 @@ int euchre_bridge_step(
     EuchreEnv *env, int action,
     int16_t observation[EUCHRE_OBSERVATION_SIZE],
     uint8_t action_mask[EUCHRE_ENCODED_ACTION_MASK_SIZE], int *reward);
+
+/* Own and advance several environments through one foreign-function call. */
+EuchreBatchEnv *euchre_bridge_batch_create(size_t environment_count);
+void euchre_bridge_batch_destroy(EuchreBatchEnv *batch);
+size_t euchre_bridge_batch_size(const EuchreBatchEnv *batch);
+
+int euchre_bridge_batch_reset(
+    EuchreBatchEnv *batch, const uint64_t seeds[], const int learning_seats[],
+    int16_t observations[], uint8_t action_masks[], int rewards[],
+    int statuses[]);
+
+int euchre_bridge_batch_step(
+    EuchreBatchEnv *batch, const int actions[], int16_t observations[],
+    uint8_t action_masks[], int rewards[], int statuses[]);
 
 /* Runtime queries let bindings reject incompatible compiled libraries. */
 int euchre_bridge_layout_version(void);
