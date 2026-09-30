@@ -58,3 +58,10 @@ def encode_features(observation: Sequence[int]) -> np.ndarray:
     if len(features) != FEATURE_SIZE:
         raise RuntimeError(f"Feature layout produced {len(features)} values")
     return np.asarray(features, dtype=np.float32)
+
+
+def encode_feature_batch(observations: Sequence[Sequence[int]]) -> np.ndarray:
+    """Encode a collection of public observations as one feature matrix."""
+    if len(observations) == 0:
+        return np.empty((0, FEATURE_SIZE), dtype=np.float32)
+    return np.stack([encode_features(observation) for observation in observations])

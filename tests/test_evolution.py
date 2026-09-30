@@ -5,7 +5,13 @@ from pathlib import Path
 import numpy as np
 
 from euchre_ml.env import EuchreEnv
-from euchre_ml.evolution import EvolutionConfig, train_evolution
+from euchre_ml.evaluation import run_episode
+from euchre_ml.evolution import (
+    EvolutionConfig,
+    build_cases,
+    evaluate_genome,
+    train_evolution,
+)
 from euchre_ml.features import FEATURE_SIZE, encode_features
 from euchre_ml.neural_policy import NeuralPolicy, NetworkShape, initialize_genome
 
@@ -34,12 +40,28 @@ class EvolutionTests(unittest.TestCase):
                     validation_seeds=2,
                     hidden_size=4,
                     checkpoint_path=str(checkpoint),
+                    log_path=str(Path(directory) / "history.jsonl"),
                 )
             )
             self.assertEqual(len(history), 1)
             self.assertTrue(np.isfinite(history[0].validation_advantage))
             policy = NeuralPolicy.load(checkpoint)
             self.assertEqual(policy.shape.hidden_size, 4)
+
+    def test_batched_fitness_matches_sequential_fitness(self) -> None:
+        shape = NetworkShape(hidden_size=4)
+        genome = initialize_genome(np.random.default_rng(7), shape)
+        policy = NeuralPolicy(genome, shape)
+        cases = build_cases(range(1, 9))
+        sequential = np.mean([
+            run_episode(policy, case.seed, case.seat).reward
+            - case.baseline_reward
+            for case in cases
+        ])
+        batched = evaluate_genome(
+            genome, cases, shape, rollouts_per_candidate=5
+        )
+        self.assertEqual(sequential, batched)
 
 
 if __name__ == "__main__":

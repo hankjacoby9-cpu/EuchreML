@@ -15,10 +15,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--training-seeds", type=int, default=64)
     parser.add_argument("--validation-seeds", type=int, default=128)
     parser.add_argument("--hidden-size", type=int, default=16)
+    parser.add_argument("--rollouts-per-candidate", type=int, default=16)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument(
         "--checkpoint", default="checkpoints/evolution_best.npz"
     )
+    parser.add_argument("--log", default="checkpoints/evolution_history.jsonl")
     return parser.parse_args()
 
 
@@ -33,7 +35,9 @@ def main() -> None:
         validation_seeds=args.validation_seeds,
         seed=args.seed,
         hidden_size=args.hidden_size,
+        rollouts_per_candidate=args.rollouts_per_candidate,
         checkpoint_path=args.checkpoint,
+        log_path=args.log,
     )
     print("Objective: paired team score margin against heuristic baseline")
     print(
@@ -45,9 +49,12 @@ def main() -> None:
             f"generation {result.generation:3d} | "
             f"train {result.training_advantage:+.4f} | "
             f"validation {result.validation_advantage:+.4f} | "
-            f"best mutation {result.best_mutation_advantage:+.4f}"
+            f"best mutation {result.best_mutation_advantage:+.4f} | "
+            f"{result.hands_evaluated:,} hands in "
+            f"{result.elapsed_seconds:.2f}s"
         )
     print(f"Best validation checkpoint: {config.checkpoint_path}")
+    print(f"Generation log: {config.log_path}")
 
 
 if __name__ == "__main__":

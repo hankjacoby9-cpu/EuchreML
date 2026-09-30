@@ -104,7 +104,10 @@ make train-evolution
 
 The only fitness signal is the candidate's paired team score margin relative
 to the heuristic on identical deals. Training and validation use disjoint seed
-ranges, and the best validation policy is saved under `checkpoints/`.
+ranges, every generation receives fresh shared training deals, and the best
+validation policy is saved under `checkpoints/`. Candidate mutations run
+concurrently through the asynchronous C batch, while NumPy performs grouped
+neural inference. Generation metrics are written to JSONL for learning curves.
 
 The observation encoder expands public categorical values such as seats,
 suits, phases, cards, and history entries into one-hot features. The network
