@@ -202,6 +202,29 @@ EuchreEnvStatus euchre_env_reset_team_match(
     return advance_to_decision(env, observation, legal_actions, reward);
 }
 
+EuchreEnvStatus euchre_env_reset_head_to_head_match(
+    EuchreEnv *env, uint64_t seed, int reward_team, int starting_dealer,
+    int target_score, EuchreObservation *observation,
+    bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
+    if (env == NULL || observation == NULL || legal_actions == NULL ||
+        reward == NULL || reward_team < 0 || reward_team > 1 ||
+        starting_dealer < 0 || starting_dealer >= EUCHRE_PLAYERS ||
+        target_score <= 0) return EUCHRE_ENV_ERROR;
+
+    euchre_init(&env->game, seed);
+    env->controlled_seats = (1U << EUCHRE_PLAYERS) - 1U;
+    env->reward_team = reward_team;
+    env->observation_seat = reward_team;
+    env->opponent_state = seed ^ UINT64_C(0xa0761d6478bd642f);
+    env->active = true;
+    env->match_mode = true;
+    env->target_score = target_score;
+    env->game.dealer =
+        (starting_dealer + EUCHRE_PLAYERS - 1) % EUCHRE_PLAYERS;
+    euchre_deal(&env->game);
+    return advance_to_decision(env, observation, legal_actions, reward);
+}
+
 /* Apply a meaningful learning action and advance to its next decision. */
 EuchreEnvStatus euchre_env_step(
     EuchreEnv *env, EuchreAction action, EuchreObservation *observation,

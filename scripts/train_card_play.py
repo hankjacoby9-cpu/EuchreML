@@ -19,6 +19,10 @@ def main() -> None:
     parser.add_argument("--finalists", type=int, default=3)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--initial-checkpoint", default="")
+    parser.add_argument(
+        "--opponent-checkpoint", action="append", default=[],
+        help="historical card checkpoint to include in the opponent pool",
+    )
     parser.add_argument("--checkpoint", default="checkpoints/card_play_best.npz")
     args = parser.parse_args()
     bidding = BiddingPolicy.load(args.bidding_checkpoint)
@@ -33,14 +37,17 @@ def main() -> None:
         initial_checkpoint_path=args.initial_checkpoint,
         checkpoint_path=args.checkpoint,
     )
-    print("Objective: paired match wins, then capped margin; bidding held fixed")
-    for result in train_card_evolution(bidding, config):
+    opponent_pool = [
+        HybridCardPolicy.load(path) for path in args.opponent_checkpoint
+    ]
+    print("Objective: opponent-pool match wins, then capped margin")
+    for result in train_card_evolution(bidding, config, opponent_pool):
         print(
             f"generation {result.generation:3d} | "
-            f"train win {result.training_advantage:+.4f} "
-            f"margin {result.training_margin_advantage:+.4f} | "
-            f"validation win {result.validation_advantage:+.4f} "
-            f"margin {result.validation_margin_advantage:+.4f} | "
+            f"train win {result.training_win_rate:.4f} "
+            f"margin {result.training_mean_margin:+.4f} | "
+            f"validation win {result.validation_win_rate:.4f} "
+            f"margin {result.validation_mean_margin:+.4f} | "
             f"{result.matches_evaluated:,} matches | "
             f"{result.elapsed_seconds:.2f}s"
         )

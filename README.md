@@ -181,11 +181,29 @@ margin as the secondary statistic:
     --policy-b heuristic --seeds 1000
 ```
 
-Card-play mutations are ranked lexicographically: paired match-win advantage
-first, capped score-margin advantage second. Every candidate receives a small
+Card-play mutations are ranked lexicographically: opponent-pool match win rate
+first, capped score margin second. Every candidate receives a small
 common-deal screen, the strongest finalists receive the larger training set,
 and checkpoint selection uses a separate fixed validation set. Continue from
 an existing card policy with `--initial-checkpoint`.
+
+Opponent-pool training routes all four seats through Python while preserving a
+separate private observation for each acting seat. The pool always includes the
+heuristic and fixed bidding policies, accepts historical card checkpoints via
+repeatable `--opponent-checkpoint` arguments, and retains promoted generation
+champions up to the configured pool limit.
+
+Run the locked final report against the heuristic and previous champion:
+
+```sh
+.venv/bin/python scripts/final_evaluation.py \
+    checkpoints/card_play_pool_best.npz \
+    checkpoints/card_play_match_best.npz
+```
+
+Training begins at seed 1, validation begins at 1,000,001, and the locked final
+test begins at 9,000,001. The report covers match win rate and confidence
+interval, capped margin, calling success, euchre rate, and lone-hand outcomes.
 
 ## Design boundary
 

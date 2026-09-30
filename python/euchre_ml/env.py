@@ -119,6 +119,24 @@ class EuchreEnv:
         )
         return self._read_result(status)
 
+    def reset_head_to_head_match(
+        self, seed: int, reward_team: int, starting_dealer: int = 0,
+        target_score: int = 10,
+    ) -> StepResult:
+        """Start a match where Python supplies every partnership decision."""
+        self._require_open()
+        if reward_team not in (0, 1):
+            raise ValueError("reward_team must be 0 or 1")
+        if starting_dealer not in range(4):
+            raise ValueError("starting_dealer must be between 0 and 3")
+        if target_score <= 0:
+            raise ValueError("target_score must be positive")
+        status = lib.euchre_bridge_reset_head_to_head_match(
+            self._env, seed, reward_team, starting_dealer, target_score,
+            self._observation, self._action_mask, self._reward,
+        )
+        return self._read_result(status)
+
     def step(self, action: int) -> StepResult:
         self._require_open()
         status = lib.euchre_bridge_step(

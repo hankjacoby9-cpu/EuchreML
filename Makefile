@@ -32,7 +32,7 @@ test: build/test_euchre
 test-python:
 	.venv/bin/python -m unittest tests/test_python_bridge.py tests/test_evaluation.py \
 		tests/test_evolution.py tests/test_bidding_evolution.py \
-		tests/test_card_play_evolution.py
+		tests/test_card_play_evolution.py tests/test_final_evaluation.py
 
 evaluate:
 	.venv/bin/python scripts/evaluate_policies.py

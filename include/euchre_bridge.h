@@ -39,6 +39,11 @@ int euchre_bridge_reset_team_match(
     int target_score, int16_t observation[EUCHRE_OBSERVATION_SIZE],
     uint8_t action_mask[EUCHRE_ENCODED_ACTION_MASK_SIZE], int *reward);
 
+int euchre_bridge_reset_head_to_head_match(
+    EuchreEnv *env, uint64_t seed, int reward_team, int starting_dealer,
+    int target_score, int16_t observation[EUCHRE_OBSERVATION_SIZE],
+    uint8_t action_mask[EUCHRE_ENCODED_ACTION_MASK_SIZE], int *reward);
+
 int euchre_bridge_step(
     EuchreEnv *env, int action,
     int16_t observation[EUCHRE_OBSERVATION_SIZE],

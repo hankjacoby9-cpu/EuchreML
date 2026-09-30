@@ -48,9 +48,11 @@ class CardPlayEvolutionTests(unittest.TestCase):
 
     def test_match_fitness_has_valid_win_range(self) -> None:
         bidding = BiddingPolicy(initialize_bidding_genome())
-        cases = build_match_cases([91], bidding)
-        fitness = evaluate_card_genome(initialize_card_genome(), bidding, cases)
-        self.assertTrue(-1.0 <= fitness.win_advantage <= 1.0)
+        cases = build_match_cases([91], [bidding])
+        fitness = evaluate_card_genome(
+            initialize_card_genome(), bidding, cases, [bidding]
+        )
+        self.assertTrue(0.0 <= fitness.win_rate <= 1.0)
 
 
 if __name__ == "__main__":

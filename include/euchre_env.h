@@ -52,6 +52,12 @@ EuchreEnvStatus euchre_env_reset_team_match(
     int target_score, EuchreObservation *observation,
     bool legal_actions[EUCHRE_ACTION_COUNT], int *reward);
 
+/* Expose every non-forced decision, one acting seat's private view at a time. */
+EuchreEnvStatus euchre_env_reset_head_to_head_match(
+    EuchreEnv *env, uint64_t seed, int reward_team, int starting_dealer,
+    int target_score, EuchreObservation *observation,
+    bool legal_actions[EUCHRE_ACTION_COUNT], int *reward);
+
 /*
  * Apply one learning-seat action and advance to its next meaningful decision.
  * Reward remains zero until terminal, then equals team points minus opponents'.

@@ -221,6 +221,40 @@ def run_team_match(
     )
 
 
+def run_head_to_head_match(
+    policy: Policy, opponent: Policy, seed: int, policy_team: int,
+    starting_dealer: int, target_score: int = 10,
+) -> MatchResult:
+    """Run two Python policies while preserving acting-seat privacy."""
+    if policy_team not in (0, 1):
+        raise ValueError("policy_team must be 0 or 1")
+    policies = (policy, opponent) if policy_team == 0 else (opponent, policy)
+    policy_rngs = {
+        seat: random.Random((seed << 4) ^ seat ^ 0x6A09E667)
+        for seat in range(4)
+    }
+    with EuchreEnv() as env:
+        result = env.reset_head_to_head_match(
+            seed, policy_team, starting_dealer, target_score
+        )
+        while not result.done:
+            seat = result.observation[1]
+            action = policies[seat % 2](result, policy_rngs[seat])
+            if (action < 0 or action >= len(result.action_mask)
+                    or not result.action_mask[action]):
+                raise ValueError(f"Policy selected illegal action {action}")
+            result = env.step(action)
+    raw_score = (result.observation[18], result.observation[19])
+    return MatchResult(
+        seed=seed,
+        team=policy_team,
+        starting_dealer=starting_dealer,
+        won=raw_score[policy_team] >= target_score,
+        capped_margin=result.reward,
+        raw_score=raw_score,
+    )
+
+
 def _bootstrap_interval(
     differences: Sequence[int], samples: int, confidence: float, seed: int
 ) -> Tuple[float, float]:

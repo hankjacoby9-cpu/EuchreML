@@ -10,6 +10,22 @@ from euchre_ml import (
 
 
 class BridgeIntegrationTests(unittest.TestCase):
+    def test_head_to_head_exposes_only_the_acting_seat(self) -> None:
+        seen = set()
+        with EuchreEnv() as env:
+            result = env.reset_head_to_head_match(8080, 0, 0, 3)
+            while not result.done:
+                seat = result.observation[1]
+                self.assertEqual(seat, result.observation[3])
+                self.assertLessEqual(sum(result.observation[20:44]), 5)
+                seen.add(seat)
+                action = next(
+                    index for index, legal in enumerate(result.action_mask)
+                    if legal
+                )
+                result = env.step(action)
+        self.assertEqual(seen, {0, 1, 2, 3})
+
     def test_complete_episodes_for_every_seat(self) -> None:
         self.assertEqual(LAYOUT_VERSION, 1)
         self.assertEqual(OBSERVATION_SIZE, 138)
