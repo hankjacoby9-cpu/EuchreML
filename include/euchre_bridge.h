@@ -38,6 +38,12 @@ int euchre_bridge_batch_step(
     EuchreBatchEnv *batch, const int actions[], int16_t observations[],
     uint8_t action_masks[], int rewards[], int statuses[]);
 
+/* Reset selected terminal slots while stepping the remaining active slots. */
+int euchre_bridge_batch_advance(
+    EuchreBatchEnv *batch, const int actions[], const uint8_t reset_flags[],
+    const uint64_t seeds[], const int learning_seats[], int16_t observations[],
+    uint8_t action_masks[], int rewards[], int statuses[]);
+
 /* Runtime queries let bindings reject incompatible compiled libraries. */
 int euchre_bridge_layout_version(void);
 int euchre_bridge_observation_size(void);

@@ -148,6 +148,39 @@ int euchre_bridge_batch_step(
     return success;
 }
 
+int euchre_bridge_batch_advance(
+    EuchreBatchEnv *batch, const int actions[], const uint8_t reset_flags[],
+    const uint64_t seeds[], const int learning_seats[], int16_t observations[],
+    uint8_t action_masks[], int rewards[], int statuses[]) {
+    if (batch == NULL || actions == NULL || reset_flags == NULL ||
+        seeds == NULL || learning_seats == NULL || observations == NULL ||
+        action_masks == NULL || rewards == NULL || statuses == NULL) {
+        return 0;
+    }
+
+    int success = 1;
+    for (size_t index = 0; index < batch->size; ++index) {
+        int status = batch->statuses[index];
+        if (reset_flags[index]) {
+            status = euchre_bridge_reset(
+                batch->envs[index], seeds[index], learning_seats[index],
+                observations + index * EUCHRE_OBSERVATION_SIZE,
+                action_masks + index * EUCHRE_ENCODED_ACTION_MASK_SIZE,
+                rewards + index);
+        } else if (status == EUCHRE_ENV_DECISION) {
+            status = euchre_bridge_step(
+                batch->envs[index], actions[index],
+                observations + index * EUCHRE_OBSERVATION_SIZE,
+                action_masks + index * EUCHRE_ENCODED_ACTION_MASK_SIZE,
+                rewards + index);
+        }
+        batch->statuses[index] = status;
+        statuses[index] = status;
+        if (status == EUCHRE_ENV_ERROR) success = 0;
+    }
+    return success;
+}
+
 int euchre_bridge_layout_version(void) {
     return EUCHRE_OBSERVATION_LAYOUT_VERSION;
 }

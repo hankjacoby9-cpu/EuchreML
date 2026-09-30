@@ -84,6 +84,45 @@ class BridgeIntegrationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 batch.step(actions)
 
+    def test_zero_copy_batch_can_replace_terminal_slots(self) -> None:
+        environment_count = 4
+        target_episodes = 20
+        next_episode = environment_count
+        completed = 0
+        active = [True] * environment_count
+        with EuchreBatchEnv(environment_count) as batch:
+            buffers = batch.reset_buffers(range(1, 5), range(4))
+            observation_view = buffers.observations
+
+            while completed < target_episodes:
+                for environment in range(environment_count):
+                    buffers.reset_flags[environment] = 0
+                    if not active[environment]:
+                        continue
+                    if buffers.statuses[environment] == 1:
+                        completed += 1
+                        if next_episode < target_episodes:
+                            buffers.reset_flags[environment] = 1
+                            buffers.seeds[environment] = next_episode + 1
+                            buffers.learning_seats[environment] = next_episode % 4
+                            next_episode += 1
+                        else:
+                            active[environment] = False
+                        continue
+
+                    mask_start = environment * ACTION_COUNT
+                    buffers.actions[environment] = next(
+                        action
+                        for action in range(ACTION_COUNT)
+                        if buffers.action_masks[mask_start + action]
+                    )
+
+                if completed < target_episodes:
+                    returned = batch.advance_buffers()
+                    self.assertIs(returned.observations, observation_view)
+
+            self.assertEqual(completed, target_episodes)
+
 
 if __name__ == "__main__":
     unittest.main()

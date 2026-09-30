@@ -67,7 +67,15 @@ and native batches. Interleaved modes perform one CFFI call per environment
 decision; native modes cross CFFI once for the whole batch. The current native
 batch uses synchronized episode waves and materializes every result as Python
 tuples. This intentionally provides a first implementation to measure before
-adding asynchronous slot resets and zero-copy NumPy buffer views.
+using the optimized asynchronous path. `reset_buffers()` and
+`advance_buffers()` expose flat, writable `memoryview` objects over the C-owned
+arrays and allow completed slots to be replaced while other slots continue.
+NumPy can wrap a view without copying, for example:
+
+```python
+observations = np.frombuffer(batch.buffers.observations, dtype=np.int16)
+observations = observations.reshape(batch.environment_count, 138)
+```
 
 ## Design boundary
 

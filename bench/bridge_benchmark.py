@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from euchre_ml import EuchreBatchEnv, EuchreEnv, StepResult
+from euchre_ml import ACTION_COUNT, EuchreBatchEnv, EuchreEnv, StepResult
 
 
 @dataclass(frozen=True)
@@ -128,6 +128,54 @@ def run_native_batch(episodes: int, environment_count: int) -> BenchmarkResult:
     return BenchmarkResult(measured_episodes, decisions, seconds)
 
 
+def run_async_zero_copy_batch(
+    episodes: int, environment_count: int
+) -> BenchmarkResult:
+    """Keep slots occupied and read/write the C-owned buffers directly."""
+    if episodes < environment_count:
+        raise ValueError("episodes must be at least the native batch size")
+
+    decisions = 0
+    completed = 0
+    next_episode = environment_count
+    active = [True] * environment_count
+    with EuchreBatchEnv(environment_count) as batch:
+        buffers = batch.reset_buffers(
+            seeds=range(1, environment_count + 1),
+            learning_seats=[index % 4 for index in range(environment_count)],
+        )
+        start = time.perf_counter()
+        while completed < episodes:
+            for environment in range(environment_count):
+                buffers.reset_flags[environment] = 0
+                if not active[environment]:
+                    continue
+
+                if buffers.statuses[environment] == 1:
+                    completed += 1
+                    if next_episode < episodes:
+                        buffers.reset_flags[environment] = 1
+                        buffers.seeds[environment] = next_episode + 1
+                        buffers.learning_seats[environment] = next_episode % 4
+                        next_episode += 1
+                    else:
+                        active[environment] = False
+                    continue
+
+                mask_start = environment * ACTION_COUNT
+                buffers.actions[environment] = next(
+                    action
+                    for action in range(ACTION_COUNT)
+                    if buffers.action_masks[mask_start + action]
+                )
+                decisions += 1
+
+            if completed < episodes:
+                batch.advance_buffers()
+        seconds = time.perf_counter() - start
+    return BenchmarkResult(episodes, decisions, seconds)
+
+
 def print_result(label: str, result: BenchmarkResult) -> None:
     print(
         f"{label:<24} "
@@ -163,6 +211,10 @@ def main() -> None:
         print_result(
             f"native batch x{batch_size}",
             run_native_batch(args.episodes, batch_size),
+        )
+        print_result(
+            f"async zero-copy x{batch_size}",
+            run_async_zero_copy_batch(args.episodes, batch_size),
         )
     print("Native modes cross CFFI once per batch step.")
 

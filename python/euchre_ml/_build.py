@@ -30,6 +30,14 @@ ffibuilder.cdef(
                                  int16_t *observations,
                                  uint8_t *action_masks, int *rewards,
                                  int *statuses);
+    int euchre_bridge_batch_advance(EuchreBatchEnv *batch,
+                                    const int *actions,
+                                    const uint8_t *reset_flags,
+                                    const uint64_t *seeds,
+                                    const int *learning_seats,
+                                    int16_t *observations,
+                                    uint8_t *action_masks, int *rewards,
+                                    int *statuses);
 
     int euchre_bridge_layout_version(void);
     int euchre_bridge_observation_size(void);

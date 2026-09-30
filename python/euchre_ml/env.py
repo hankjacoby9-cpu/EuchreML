@@ -21,6 +21,21 @@ class StepResult:
     done: bool
 
 
+@dataclass(frozen=True)
+class BatchBuffers:
+    """Zero-copy flat views over the arrays owned by a EuchreBatchEnv."""
+
+    environment_count: int
+    observations: memoryview
+    action_masks: memoryview
+    rewards: memoryview
+    statuses: memoryview
+    actions: memoryview
+    reset_flags: memoryview
+    seeds: memoryview
+    learning_seats: memoryview
+
+
 class EuchreEnv:
     """Thin Python owner for one opaque C decision-point environment."""
 
@@ -108,6 +123,7 @@ class EuchreBatchEnv:
         self._seeds = ffi.new("uint64_t[]", environment_count)
         self._learning_seats = ffi.new("int[]", environment_count)
         self._actions = ffi.new("int[]", environment_count)
+        self._reset_flags = ffi.new("uint8_t[]", environment_count)
         self._observations = ffi.new(
             "int16_t[]", environment_count * OBSERVATION_SIZE
         )
@@ -116,6 +132,35 @@ class EuchreBatchEnv:
         )
         self._rewards = ffi.new("int[]", environment_count)
         self._statuses = ffi.new("int[]", environment_count)
+        self.buffers = BatchBuffers(
+            environment_count=environment_count,
+            observations=self._view(
+                self._observations, "int16_t", "h",
+                environment_count * OBSERVATION_SIZE,
+            ),
+            action_masks=self._view(
+                self._action_masks, "uint8_t", "B",
+                environment_count * ACTION_COUNT,
+            ),
+            rewards=self._view(
+                self._rewards, "int", "i", environment_count
+            ),
+            statuses=self._view(
+                self._statuses, "int", "i", environment_count
+            ),
+            actions=self._view(
+                self._actions, "int", "i", environment_count
+            ),
+            reset_flags=self._view(
+                self._reset_flags, "uint8_t", "B", environment_count
+            ),
+            seeds=self._view(
+                self._seeds, "uint64_t", "Q", environment_count
+            ),
+            learning_seats=self._view(
+                self._learning_seats, "int", "i", environment_count
+            ),
+        )
 
     def close(self) -> None:
         if self._batch != ffi.NULL:
@@ -167,6 +212,45 @@ class EuchreBatchEnv:
         )
         return self._read_results(success)
 
+    def reset_buffers(
+        self, seeds: Sequence[int], learning_seats: Sequence[int]
+    ) -> BatchBuffers:
+        """Reset every slot and return views without creating Python tuples."""
+        self._require_open()
+        self._require_count(seeds, "seeds")
+        self._require_count(learning_seats, "learning_seats")
+        for index in range(self.environment_count):
+            self._seeds[index] = seeds[index]
+            self._learning_seats[index] = learning_seats[index]
+        success = lib.euchre_bridge_batch_reset(
+            self._batch,
+            self._seeds,
+            self._learning_seats,
+            self._observations,
+            self._action_masks,
+            self._rewards,
+            self._statuses,
+        )
+        self._check_success(success)
+        return self.buffers
+
+    def advance_buffers(self) -> BatchBuffers:
+        """Step or reset every slot using values in the writable input views."""
+        self._require_open()
+        success = lib.euchre_bridge_batch_advance(
+            self._batch,
+            self._actions,
+            self._reset_flags,
+            self._seeds,
+            self._learning_seats,
+            self._observations,
+            self._action_masks,
+            self._rewards,
+            self._statuses,
+        )
+        self._check_success(success)
+        return self.buffers
+
     def _require_open(self) -> None:
         if self._batch == ffi.NULL:
             raise RuntimeError("Euchre environment batch is closed")
@@ -178,8 +262,7 @@ class EuchreBatchEnv:
             )
 
     def _read_results(self, success: int) -> Tuple[StepResult, ...]:
-        if not success:
-            raise ValueError("The C environment batch rejected an action")
+        self._check_success(success)
 
         results = []
         for environment in range(self.environment_count):
@@ -203,3 +286,13 @@ class EuchreBatchEnv:
                 )
             )
         return tuple(results)
+
+    @staticmethod
+    def _view(cdata, c_type: str, format_code: str, length: int) -> memoryview:
+        byte_view = memoryview(ffi.buffer(cdata, ffi.sizeof(c_type) * length))
+        return byte_view if format_code == "B" else byte_view.cast(format_code)
+
+    @staticmethod
+    def _check_success(success: int) -> None:
+        if not success:
+            raise ValueError("The C environment batch rejected an action")

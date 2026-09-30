@@ -1,5 +1,6 @@
 from .env import (
     ACTION_COUNT,
+    BatchBuffers,
     LAYOUT_VERSION,
     OBSERVATION_SIZE,
     EuchreBatchEnv,
@@ -9,6 +10,7 @@ from .env import (
 
 __all__ = [
     "ACTION_COUNT",
+    "BatchBuffers",
     "LAYOUT_VERSION",
     "OBSERVATION_SIZE",
     "EuchreBatchEnv",
