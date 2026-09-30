@@ -77,6 +77,22 @@ observations = np.frombuffer(batch.buffers.observations, dtype=np.int16)
 observations = observations.reshape(batch.environment_count, 138)
 ```
 
+## Duplicate-deal evaluation
+
+Compare two policies on identical deals, rotating each deal through all four
+seats:
+
+```sh
+make evaluate
+.venv/bin/python scripts/evaluate_policies.py --policy-a heuristic \
+    --policy-b random --seeds 10000
+```
+
+The report emphasizes paired reward advantage and a bootstrap confidence
+interval. It also breaks advantage down by seat and reports bidding, euchre,
+sweep, lone-hand, and decision-category statistics. Available reference
+policies are `first`, `random`, and `heuristic`.
+
 ## Design boundary
 
 `EuchreGame` owns the rules and complete state. Each `EuchrePolicy` receives an

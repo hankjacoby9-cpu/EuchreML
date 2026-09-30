@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2
 CPPFLAGS ?= -Iinclude
 
-.PHONY: all run test test-python benchmark benchmark-python clean
+.PHONY: all run test test-python evaluate benchmark benchmark-python clean
 
 all: build/euchre_demo
 
@@ -30,7 +30,10 @@ test: build/test_euchre
 	./build/test_euchre
 
 test-python:
-	.venv/bin/python -m unittest tests/test_python_bridge.py
+	.venv/bin/python -m unittest tests/test_python_bridge.py tests/test_evaluation.py
+
+evaluate:
+	.venv/bin/python scripts/evaluate_policies.py
 
 benchmark: build/euchre_benchmark
 	./build/euchre_benchmark
