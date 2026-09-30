@@ -18,3 +18,7 @@ add_executable(euchre_tests tests/test_euchre.c)
 target_link_libraries(euchre_tests PRIVATE euchre_engine)
 target_compile_options(euchre_tests PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME euchre_engine_tests COMMAND euchre_tests)
+
+add_executable(euchre_benchmark bench/benchmark.c)
+target_link_libraries(euchre_benchmark PRIVATE euchre_engine)
+target_compile_options(euchre_benchmark PRIVATE -Wall -Wextra -Wpedantic)

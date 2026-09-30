@@ -28,7 +28,7 @@ bool euchre_observe(const EuchreGame *game, int player,
     observation->hand_count = game->hands[player].count;
     memcpy(observation->hand, game->hands[player].cards,
            observation->hand_count * sizeof(EuchreCard));
-    observation->upcard = game->kitty[0];
+    observation->upcard = game->upcard;
     memcpy(observation->trick, game->trick, sizeof(observation->trick));
     memcpy(observation->trick_slot_used, game->trick_slot_used,
            sizeof(observation->trick_slot_used));

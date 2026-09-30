@@ -18,6 +18,7 @@ The engine currently implements:
 - deterministic simulations for comparing the same seeds
 - engine tests for bidding restrictions, lone hands, scoring, and full matches
 - interchangeable per-seat policies with stable actions and legal-action masks
+- independent per-game random state for parallel simulations
 
 Match play to 10 points, interactive input, and the Python bridge are planned
 after the core hand logic is stable.
@@ -40,6 +41,16 @@ make test
 The test executable runs complete matches for several fixed seeds and checks
 the engine's state after every hand. It also directly checks illegal bidding,
 including attempts to call the turned-down suit during round two.
+
+## Benchmark
+
+Run 100,000 headless hands with:
+
+```sh
+make benchmark
+```
+
+Pass a different hand count directly to `./build/euchre_benchmark` when needed.
 
 ## Design boundary
 

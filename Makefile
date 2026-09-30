@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2
 CPPFLAGS ?= -Iinclude
 
-.PHONY: all run test clean
+.PHONY: all run test benchmark clean
 
 all: build/euchre_demo
 
@@ -17,11 +17,18 @@ build/test_euchre: $(ENGINE_SOURCES) tests/test_euchre.c $(ENGINE_HEADERS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(ENGINE_SOURCES) tests/test_euchre.c -o $@
 
+build/euchre_benchmark: $(ENGINE_SOURCES) bench/benchmark.c $(ENGINE_HEADERS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(ENGINE_SOURCES) bench/benchmark.c -o $@
+
 run: build/euchre_demo
 	./build/euchre_demo
 
 test: build/test_euchre
 	./build/test_euchre
+
+benchmark: build/euchre_benchmark
+	./build/euchre_benchmark
 
 clean:
 	$(RM) -r build

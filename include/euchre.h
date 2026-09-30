@@ -49,6 +49,8 @@ typedef enum {
 typedef struct {
     EuchreHand hands[EUCHRE_PLAYERS];
     EuchreCard kitty[EUCHRE_KITTY_SIZE];
+    size_t kitty_count;
+    EuchreCard upcard;
     EuchreCard trick[EUCHRE_PLAYERS];
     bool trick_slot_used[EUCHRE_PLAYERS];
     bool cards_played[EUCHRE_DECK_SIZE];
@@ -67,6 +69,7 @@ typedef struct {
     EuchreSuit trump;
     EuchreSuit turned_suit;
     EuchrePhase phase;
+    uint64_t rng_state;
 } EuchreGame;
 
 /* Prepare a game and its random generator; a zero seed selects a default seed. */
@@ -92,6 +95,10 @@ size_t euchre_legal_moves(const EuchreGame *game, int player,
                           size_t indices[EUCHRE_HAND_SIZE]);
 /* Apply one play; trick_winner stays -1 until every active player has played. */
 bool euchre_play_card(EuchreGame *game, size_t hand_index, int *trick_winner);
+
+/* Calculate the exact points awarded for a completed hand. */
+bool euchre_hand_points(int maker_tricks, bool going_alone, int *maker_points,
+                        int *defender_points);
 
 /* Helpers for displaying enums and cards without exposing formatting details. */
 const char *euchre_suit_name(EuchreSuit suit);

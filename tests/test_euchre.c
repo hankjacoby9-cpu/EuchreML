@@ -38,6 +38,130 @@ static EuchreAction first_card_action(
     return EUCHRE_ACTION_INVALID;
 }
 
+/* Count every owned or played card and require each deck ID exactly once. */
+static bool cards_are_conserved(const EuchreGame *game) {
+    int occurrences[EUCHRE_DECK_SIZE] = {0};
+    size_t total = 0;
+
+    for (int player = 0; player < EUCHRE_PLAYERS; ++player) {
+        for (size_t i = 0; i < game->hands[player].count; ++i) {
+            int card_id = euchre_card_id(game->hands[player].cards[i]);
+            if (card_id < 0) return false;
+            ++occurrences[card_id];
+            ++total;
+        }
+    }
+    for (size_t i = 0; i < game->kitty_count; ++i) {
+        int card_id = euchre_card_id(game->kitty[i]);
+        if (card_id < 0) return false;
+        ++occurrences[card_id];
+        ++total;
+    }
+    for (int card_id = 0; card_id < EUCHRE_DECK_SIZE; ++card_id) {
+        if (game->cards_played[card_id]) {
+            ++occurrences[card_id];
+            ++total;
+        }
+    }
+    if (total != EUCHRE_DECK_SIZE) return false;
+    for (int card_id = 0; card_id < EUCHRE_DECK_SIZE; ++card_id) {
+        if (occurrences[card_id] != 1) return false;
+    }
+    return true;
+}
+
+/* Compare dealt locations to prove separate game objects shuffle independently. */
+static bool deals_match(const EuchreGame *left, const EuchreGame *right) {
+    for (int player = 0; player < EUCHRE_PLAYERS; ++player) {
+        for (size_t i = 0; i < EUCHRE_HAND_SIZE; ++i) {
+            if (euchre_card_id(left->hands[player].cards[i]) !=
+                euchre_card_id(right->hands[player].cards[i])) {
+                return false;
+            }
+        }
+    }
+    for (size_t i = 0; i < EUCHRE_KITTY_SIZE; ++i) {
+        if (euchre_card_id(left->kitty[i]) !=
+            euchre_card_id(right->kitty[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Confirm every normal, euchred, march, and lone scoring outcome exactly. */
+static void test_exact_scoring(void) {
+    struct {
+        int tricks;
+        bool alone;
+        int maker_points;
+        int defender_points;
+    } cases[] = {
+        {0, false, 0, 2}, {2, false, 0, 2}, {3, false, 1, 0},
+        {4, false, 1, 0}, {5, false, 2, 0}, {0, true, 0, 2},
+        {2, true, 0, 2},  {3, true, 1, 0},  {4, true, 1, 0},
+        {5, true, 4, 0},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        int maker_points = -1;
+        int defender_points = -1;
+        CHECK(euchre_hand_points(cases[i].tricks, cases[i].alone,
+                                 &maker_points, &defender_points));
+        CHECK(maker_points == cases[i].maker_points);
+        CHECK(defender_points == cases[i].defender_points);
+    }
+
+    int maker_points;
+    int defender_points;
+    CHECK(!euchre_hand_points(-1, false, &maker_points, &defender_points));
+    CHECK(!euchre_hand_points(6, false, &maker_points, &defender_points));
+}
+
+/* Confirm interleaved games with the same seed still receive identical deals. */
+static void test_per_game_random_state(void) {
+    EuchreGame first;
+    EuchreGame second;
+    EuchreGame unrelated;
+    euchre_init(&first, 5150);
+    euchre_init(&second, 5150);
+    euchre_init(&unrelated, 9999);
+
+    euchre_deal(&first);
+    euchre_deal(&unrelated);
+    euchre_deal(&second);
+    CHECK(deals_match(&first, &second));
+}
+
+/* Confirm all 24 cards remain unique through pickup, discard, and every play. */
+static void test_card_conservation(void) {
+    EuchreGame game;
+    bool legal[EUCHRE_ACTION_COUNT];
+    EuchreObservation observation;
+    euchre_init(&game, 606);
+    euchre_deal(&game);
+    EuchreCard original_upcard = game.upcard;
+
+    CHECK(game.kitty_count == EUCHRE_KITTY_SIZE);
+    CHECK(cards_are_conserved(&game));
+    CHECK(euchre_apply_action(&game, EUCHRE_ACTION_ORDER_UP));
+    CHECK(game.kitty_count == EUCHRE_KITTY_SIZE - 1);
+    CHECK(cards_are_conserved(&game));
+
+    CHECK(euchre_policy_legal_actions(&game, legal) == EUCHRE_HAND_SIZE + 1);
+    CHECK(euchre_apply_action(&game, first_card_action(legal)));
+    CHECK(game.kitty_count == EUCHRE_KITTY_SIZE);
+    CHECK(cards_are_conserved(&game));
+    CHECK(euchre_observe(&game, game.current_player, &observation));
+    CHECK(euchre_card_id(observation.upcard) == euchre_card_id(original_upcard));
+
+    while (game.phase == EUCHRE_PLAYING) {
+        CHECK(euchre_policy_legal_actions(&game, legal) > 0);
+        CHECK(euchre_apply_action(&game, first_card_action(legal)));
+        CHECK(cards_are_conserved(&game));
+    }
+}
+
 /* Confirm the opening-bid and dealer-discard observations and masks. */
 static void test_round_one_and_discard_masks(void) {
     EuchreGame game;
@@ -249,6 +373,9 @@ static void test_seeded_matches(void) {
 }
 
 int main(void) {
+    test_exact_scoring();
+    test_per_game_random_state();
+    test_card_conservation();
     test_round_one_and_discard_masks();
     test_round_two_masks();
     test_play_and_complete_masks();

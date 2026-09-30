@@ -3,14 +3,12 @@
 #include <stdio.h>
 #include <string.h>
 
-static uint64_t rng_state;
-
-/* Advance the small deterministic random-number generator used when shuffling. */
-static uint32_t next_random(void) {
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 7;
-    rng_state ^= rng_state << 17;
-    return (uint32_t)(rng_state >> 16);
+/* Advance this game's deterministic random generator when shuffling. */
+static uint32_t next_random(EuchreGame *game) {
+    game->rng_state ^= game->rng_state << 13;
+    game->rng_state ^= game->rng_state >> 7;
+    game->rng_state ^= game->rng_state << 17;
+    return (uint32_t)(game->rng_state >> 16);
 }
 
 /* Return the other suit with the same color, which identifies the left bower. */
@@ -64,7 +62,7 @@ void euchre_init(EuchreGame *game, uint64_t seed) {
     game->trump = EUCHRE_NO_SUIT;
     game->turned_suit = EUCHRE_NO_SUIT;
     game->phase = EUCHRE_HAND_COMPLETE;
-    rng_state = seed == 0 ? UINT64_C(0x9e3779b97f4a7c15) : seed;
+    game->rng_state = seed == 0 ? UINT64_C(0x9e3779b97f4a7c15) : seed;
 }
 
 /* Build and shuffle the 24-card deck, deal four hands, and reveal the upcard. */
@@ -84,7 +82,7 @@ void euchre_deal(EuchreGame *game) {
     }
 
     for (size_t i = EUCHRE_DECK_SIZE - 1; i > 0; --i) {
-        size_t j = next_random() % (i + 1);
+        size_t j = next_random(game) % (i + 1);
         EuchreCard temporary = deck[i];
         deck[i] = deck[j];
         deck[j] = temporary;
@@ -101,7 +99,9 @@ void euchre_deal(EuchreGame *game) {
         game->kitty[card] = deck[deck_index++];
     }
 
-    game->turned_suit = game->kitty[0].suit;
+    game->kitty_count = EUCHRE_KITTY_SIZE;
+    game->upcard = game->kitty[0];
+    game->turned_suit = game->upcard.suit;
     game->trump = EUCHRE_NO_SUIT;
     game->caller = -1;
     game->makers_team = -1;
@@ -124,7 +124,9 @@ bool euchre_order_up(EuchreGame *game, bool go_alone) {
     set_lone_hand(game, go_alone);
 
     EuchreHand *dealer_hand = &game->hands[game->dealer];
-    dealer_hand->cards[dealer_hand->count++] = game->kitty[0];
+    dealer_hand->cards[dealer_hand->count++] = game->upcard;
+    game->kitty[0] = game->kitty[game->kitty_count - 1];
+    --game->kitty_count;
     game->current_player = game->dealer;
     return true;
 }
@@ -137,8 +139,10 @@ bool euchre_dealer_discard(EuchreGame *game, size_t hand_index) {
         hand_index >= hand->count) {
         return false;
     }
+    EuchreCard discarded = hand->cards[hand_index];
     hand->cards[hand_index] = hand->cards[hand->count - 1];
     --hand->count;
+    game->kitty[game->kitty_count++] = discarded;
     begin_play(game);
     return true;
 }
@@ -268,16 +272,34 @@ static int resolve_trick(const EuchreGame *game) {
     return winner;
 }
 
+/* Calculate the exact points awarded for any valid hand outcome. */
+bool euchre_hand_points(int maker_tricks, bool going_alone, int *maker_points,
+                        int *defender_points) {
+    if (maker_tricks < 0 || maker_tricks > EUCHRE_HAND_SIZE ||
+        maker_points == NULL || defender_points == NULL) {
+        return false;
+    }
+    *maker_points = 0;
+    *defender_points = 0;
+    if (maker_tricks < 3) {
+        *defender_points = 2;
+    } else if (maker_tricks == EUCHRE_HAND_SIZE) {
+        *maker_points = going_alone ? 4 : 2;
+    } else {
+        *maker_points = 1;
+    }
+    return true;
+}
+
 /* Award points, including the four-point bonus for a lone five-trick march. */
 static void score_hand(EuchreGame *game) {
+    int maker_points;
+    int defender_points;
     int maker_tricks = game->tricks_won[game->makers_team];
-    if (maker_tricks == 5) {
-        game->score[game->makers_team] += game->going_alone ? 4 : 2;
-    } else if (maker_tricks >= 3) {
-        game->score[game->makers_team] += 1;
-    } else {
-        game->score[1 - game->makers_team] += 2;
-    }
+    (void)euchre_hand_points(maker_tricks, game->going_alone, &maker_points,
+                             &defender_points);
+    game->score[game->makers_team] += maker_points;
+    game->score[1 - game->makers_team] += defender_points;
     game->phase = EUCHRE_HAND_COMPLETE;
 }
 
