@@ -2,6 +2,7 @@ import unittest
 
 from euchre_ml.evaluation import (
     evaluate_paired,
+    evaluate_paired_matches,
     evaluate_paired_teams,
     run_episode,
 )
@@ -51,6 +52,19 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(evaluation.mean_advantage, 0.0)
         self.assertEqual(evaluation.confidence_interval, (0.0, 0.0))
         self.assertEqual(evaluation.advantage_by_seat, (0.0, 0.0))
+
+    def test_identical_match_policy_has_zero_paired_advantage(self) -> None:
+        evaluation = evaluate_paired_matches(
+            first_legal_policy,
+            first_legal_policy,
+            range(1, 3),
+            bootstrap_samples=25,
+        )
+        self.assertEqual(evaluation.pairs, 16)
+        self.assertEqual(evaluation.paired_win_advantage, 0.0)
+        self.assertEqual(evaluation.capped_margin_advantage, 0.0)
+        self.assertEqual(evaluation.win_confidence_interval, (0.0, 0.0))
+        self.assertEqual(evaluation.margin_confidence_interval, (0.0, 0.0))
 
 
 if __name__ == "__main__":

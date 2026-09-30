@@ -131,6 +131,63 @@ static void test_partnership_decision_environment(void) {
     euchre_env_destroy(env);
 }
 
+/* Verify score overage never changes terminal match margin. */
+static void test_capped_match_reward(void) {
+    int reward;
+    CHECK(euchre_match_reward(10, 6, 0, 10, &reward));
+    CHECK(reward == 4);
+    CHECK(euchre_match_reward(11, 6, 0, 10, &reward));
+    CHECK(reward == 4);
+    CHECK(euchre_match_reward(13, 6, 0, 10, &reward));
+    CHECK(reward == 4);
+    CHECK(euchre_match_reward(7 + 4, 9, 0, 10, &reward));
+    CHECK(reward == 1);
+    CHECK(euchre_match_reward(7 + 2, 9, 0, 10, &reward));
+    CHECK(reward == 0);
+    CHECK(euchre_match_reward(8 + 2, 6, 0, 10, &reward));
+    CHECK(reward == 4);
+    CHECK(euchre_match_reward(8 + 4, 6, 0, 10, &reward));
+    CHECK(reward == 4);
+    CHECK(euchre_match_reward(11, 6, 1, 10, &reward));
+    CHECK(reward == -4);
+}
+
+/* Play complete private partnership matches and require dealer rotation. */
+static void test_partnership_match_environment(void) {
+    EuchreEnv *env = euchre_env_create();
+    CHECK(env != NULL);
+    for (int starting_dealer = 0; starting_dealer < EUCHRE_PLAYERS;
+         ++starting_dealer) {
+        EuchreObservation observation;
+        bool legal[EUCHRE_ACTION_COUNT];
+        int reward;
+        bool dealers_seen[EUCHRE_PLAYERS] = {false};
+        EuchreEnvStatus status = euchre_env_reset_team_match(
+            env, 500 + starting_dealer, 0, starting_dealer, 10,
+            &observation, legal, &reward);
+        int decisions = 0;
+        while (status == EUCHRE_ENV_DECISION) {
+            CHECK(observation.player % 2 == 0);
+            dealers_seen[observation.dealer] = true;
+            status = euchre_env_step(env, first_legal_action(legal),
+                                     &observation, legal, &reward);
+            CHECK(status != EUCHRE_ENV_ERROR);
+            CHECK(++decisions < MAX_HANDS_PER_MATCH);
+        }
+        CHECK(status == EUCHRE_ENV_TERMINAL);
+        CHECK(observation.score[0] >= 10 || observation.score[1] >= 10);
+        CHECK(reward ==
+              (observation.score[0] < 10 ? observation.score[0] : 10) -
+              (observation.score[1] < 10 ? observation.score[1] : 10));
+        int dealer_count = 0;
+        for (int dealer = 0; dealer < EUCHRE_PLAYERS; ++dealer) {
+            dealer_count += dealers_seen[dealer];
+        }
+        CHECK(dealer_count == EUCHRE_PLAYERS);
+    }
+    euchre_env_destroy(env);
+}
+
 /* Confirm the foreign-language adapter returns only frozen numeric buffers. */
 static void test_numeric_bridge(void) {
     CHECK(euchre_bridge_layout_version() == EUCHRE_OBSERVATION_LAYOUT_VERSION);
@@ -755,6 +812,8 @@ int main(void) {
     test_numeric_bridge();
     test_decision_point_environment();
     test_partnership_decision_environment();
+    test_capped_match_reward();
+    test_partnership_match_environment();
     test_environment_rejects_masked_action();
     test_exact_scoring();
     test_per_game_random_state();

@@ -165,6 +165,22 @@ make train-card-play
 This card policy sees only the acting player's observation and public trick
 state. Its fitness remains final paired team margin.
 
+## Private partnership matches
+
+`EuchreEnv.reset_match()` preserves scores across hands, rotates the dealer,
+and stops immediately when either team reaches 10. Terminal reward caps both
+scores at 10, so a score of 13 provides no advantage over 10. Raw scores remain
+in the observation for diagnostics.
+
+Evaluate complete matches with win rate as the primary statistic and capped
+margin as the secondary statistic:
+
+```sh
+.venv/bin/python scripts/evaluate_policies.py --control team --match \
+    --policy-a hybrid --checkpoint-a checkpoints/card_play_best.npz \
+    --policy-b heuristic --seeds 1000
+```
+
 ## Design boundary
 
 `EuchreGame` owns the rules and complete state. Each `EuchrePolicy` receives an

@@ -35,6 +35,7 @@ class BatchBuffers:
     seeds: memoryview
     learning_seats: memoryview
     dealers: memoryview
+    target_scores: memoryview
 
 
 class EuchreEnv:
@@ -100,6 +101,24 @@ class EuchreEnv:
         )
         return self._read_result(status)
 
+    def reset_match(
+        self, seed: int, controlled_team: int, starting_dealer: int = 0,
+        target_score: int = 10,
+    ) -> StepResult:
+        """Start a private partnership match that continues to target_score."""
+        self._require_open()
+        if controlled_team not in (0, 1):
+            raise ValueError("controlled_team must be 0 or 1")
+        if starting_dealer not in range(4):
+            raise ValueError("starting_dealer must be between 0 and 3")
+        if target_score <= 0:
+            raise ValueError("target_score must be positive")
+        status = lib.euchre_bridge_reset_team_match(
+            self._env, seed, controlled_team, starting_dealer, target_score,
+            self._observation, self._action_mask, self._reward,
+        )
+        return self._read_result(status)
+
     def step(self, action: int) -> StepResult:
         self._require_open()
         status = lib.euchre_bridge_step(
@@ -147,6 +166,7 @@ class EuchreBatchEnv:
         self._seeds = ffi.new("uint64_t[]", environment_count)
         self._learning_seats = ffi.new("int[]", environment_count)
         self._dealers = ffi.new("int[]", environment_count)
+        self._target_scores = ffi.new("int[]", environment_count)
         self._actions = ffi.new("int[]", environment_count)
         self._reset_flags = ffi.new("uint8_t[]", environment_count)
         self._observations = ffi.new(
@@ -187,6 +207,9 @@ class EuchreBatchEnv:
             ),
             dealers=self._view(
                 self._dealers, "int", "i", environment_count
+            ),
+            target_scores=self._view(
+                self._target_scores, "int", "i", environment_count
             ),
         )
 
@@ -324,6 +347,49 @@ class EuchreBatchEnv:
             self._observations,
             self._action_masks,
             self._rewards,
+            self._statuses,
+        )
+        self._check_success(success)
+        return self.buffers
+
+    def reset_match_buffers(
+        self, seeds: Sequence[int], controlled_teams: Sequence[int],
+        starting_dealers: Sequence[int], target_scores: Sequence[int],
+    ) -> BatchBuffers:
+        """Reset every slot as a private partnership match."""
+        self._require_open()
+        for values, name in (
+            (seeds, "seeds"), (controlled_teams, "controlled_teams"),
+            (starting_dealers, "starting_dealers"),
+            (target_scores, "target_scores"),
+        ):
+            self._require_count(values, name)
+        for index in range(self.environment_count):
+            if controlled_teams[index] not in (0, 1):
+                raise ValueError("controlled teams must be 0 or 1")
+            if starting_dealers[index] not in range(4):
+                raise ValueError("starting dealers must be between 0 and 3")
+            if target_scores[index] <= 0:
+                raise ValueError("target scores must be positive")
+            self._seeds[index] = seeds[index]
+            self._learning_seats[index] = controlled_teams[index]
+            self._dealers[index] = starting_dealers[index]
+            self._target_scores[index] = target_scores[index]
+        success = lib.euchre_bridge_batch_reset_matches(
+            self._batch, self._seeds, self._learning_seats, self._dealers,
+            self._target_scores, self._observations, self._action_masks,
+            self._rewards, self._statuses,
+        )
+        self._check_success(success)
+        return self.buffers
+
+    def advance_match_buffers(self) -> BatchBuffers:
+        """Step or replace match slots using the writable batch views."""
+        self._require_open()
+        success = lib.euchre_bridge_batch_advance_matches(
+            self._batch, self._actions, self._reset_flags, self._seeds,
+            self._learning_seats, self._dealers, self._target_scores,
+            self._observations, self._action_masks, self._rewards,
             self._statuses,
         )
         self._check_success(success)

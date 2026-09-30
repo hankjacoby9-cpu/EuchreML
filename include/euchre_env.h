@@ -13,6 +13,10 @@ typedef enum {
     EUCHRE_ENV_TERMINAL
 } EuchreEnvStatus;
 
+/* Cap both scores at the target before calculating one team's final margin. */
+bool euchre_match_reward(int score0, int score1, int team, int target_score,
+                         int *reward);
+
 /* Allocate and release one opaque single-hand learning environment. */
 EuchreEnv *euchre_env_create(void);
 void euchre_env_destroy(EuchreEnv *env);
@@ -40,6 +44,12 @@ EuchreEnvStatus euchre_env_reset_team(
 EuchreEnvStatus euchre_env_reset_team_with_dealer(
     EuchreEnv *env, uint64_t seed, int controlled_team, int dealer,
     EuchreObservation *observation,
+    bool legal_actions[EUCHRE_ACTION_COUNT], int *reward);
+
+/* Play consecutive hands to target_score with both partnership seats controlled. */
+EuchreEnvStatus euchre_env_reset_team_match(
+    EuchreEnv *env, uint64_t seed, int controlled_team, int starting_dealer,
+    int target_score, EuchreObservation *observation,
     bool legal_actions[EUCHRE_ACTION_COUNT], int *reward);
 
 /*

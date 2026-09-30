@@ -73,6 +73,29 @@ class PairedEvaluation:
     advantage_by_seat: Tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class MatchResult:
+    seed: int
+    team: int
+    starting_dealer: int
+    won: bool
+    capped_margin: int
+    raw_score: Tuple[int, int]
+
+
+@dataclass(frozen=True)
+class PairedMatchEvaluation:
+    policy_a: str
+    policy_b: str
+    pairs: int
+    wins_a: int
+    wins_b: int
+    paired_win_advantage: float
+    win_confidence_interval: Tuple[float, float]
+    capped_margin_advantage: float
+    margin_confidence_interval: Tuple[float, float]
+
+
 def _decision_category(result: StepResult) -> str:
     phase = result.observation[8]
     if phase == 0:
@@ -165,6 +188,36 @@ def run_team_episode(
         own_call_sweep=team_called and maker_tricks == 5,
         own_lone_call=team_called and going_alone,
         own_lone_sweep=team_called and going_alone and maker_tricks == 5,
+    )
+
+
+def run_team_match(
+    policy: Policy, seed: int, team: int, starting_dealer: int,
+    target_score: int = 10,
+) -> MatchResult:
+    """Run one private partnership policy through a complete match."""
+    policy_rngs = {
+        seat: random.Random((seed << 3) ^ seat ^ 0xA5A5A5A5)
+        for seat in (team, team + 2)
+    }
+    with EuchreEnv() as env:
+        result = env.reset_match(seed, team, starting_dealer, target_score)
+        while not result.done:
+            seat = result.observation[1]
+            if seat not in policy_rngs:
+                raise RuntimeError("Match environment exposed an opponent view")
+            action = policy(result, policy_rngs[seat])
+            if not result.action_mask[action]:
+                raise ValueError(f"Policy selected illegal action {action}")
+            result = env.step(action)
+    raw_score = (result.observation[18], result.observation[19])
+    return MatchResult(
+        seed=seed,
+        team=team,
+        starting_dealer=starting_dealer,
+        won=raw_score[team] >= target_score,
+        capped_margin=result.reward,
+        raw_score=raw_score,
     )
 
 
@@ -287,5 +340,50 @@ def evaluate_paired_teams(
         paired_losses=sum(difference < 0 for difference in differences),
         advantage_by_seat=tuple(
             sum(values) / len(values) for values in team_differences
+        ),
+    )
+
+
+def evaluate_paired_matches(
+    policy_a: Policy,
+    policy_b: Policy,
+    seeds: Iterable[int],
+    policy_a_name: str = "policy_a",
+    policy_b_name: str = "policy_b",
+    bootstrap_samples: int = 1000,
+) -> PairedMatchEvaluation:
+    """Compare match wins first and capped score margin second."""
+    win_differences = []
+    margin_differences = []
+    wins_a = 0
+    wins_b = 0
+    for seed in seeds:
+        for dealer in range(4):
+            for team in range(2):
+                result_a = run_team_match(policy_a, seed, team, dealer)
+                result_b = run_team_match(policy_b, seed, team, dealer)
+                wins_a += result_a.won
+                wins_b += result_b.won
+                win_differences.append(int(result_a.won) - int(result_b.won))
+                margin_differences.append(
+                    result_a.capped_margin - result_b.capped_margin
+                )
+    if not win_differences:
+        raise ValueError("At least one seed is required")
+    return PairedMatchEvaluation(
+        policy_a=policy_a_name,
+        policy_b=policy_b_name,
+        pairs=len(win_differences),
+        wins_a=wins_a,
+        wins_b=wins_b,
+        paired_win_advantage=sum(win_differences) / len(win_differences),
+        win_confidence_interval=_bootstrap_interval(
+            win_differences, bootstrap_samples, 0.95, 0xA11CE
+        ),
+        capped_margin_advantage=(
+            sum(margin_differences) / len(margin_differences)
+        ),
+        margin_confidence_interval=_bootstrap_interval(
+            margin_differences, bootstrap_samples, 0.95, 0xC4FFED
         ),
     )

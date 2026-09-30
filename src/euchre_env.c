@@ -14,7 +14,21 @@ struct EuchreEnv {
     int observation_seat;
     uint64_t opponent_state;
     bool active;
+    bool match_mode;
+    int target_score;
 };
+
+bool euchre_match_reward(int score0, int score1, int team, int target_score,
+                         int *reward) {
+    if (score0 < 0 || score1 < 0 || team < 0 || team > 1 ||
+        target_score <= 0 || reward == NULL) return false;
+    int capped[2] = {
+        score0 < target_score ? score0 : target_score,
+        score1 < target_score ? score1 : target_score,
+    };
+    *reward = capped[team] - capped[1 - team];
+    return true;
+}
 
 /* Return the only legal action when the current state has no real choice. */
 static EuchreAction only_legal_action(
@@ -29,8 +43,10 @@ static EuchreAction only_legal_action(
 static EuchreEnvStatus finish_hand(
     EuchreEnv *env, EuchreObservation *observation,
     bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
-    *reward = env->game.score[env->reward_team] -
-              env->game.score[1 - env->reward_team];
+    if (!euchre_match_reward(env->game.score[0], env->game.score[1],
+                             env->reward_team, env->target_score, reward)) {
+        return EUCHRE_ENV_ERROR;
+    }
     memset(legal_actions, 0, sizeof(bool) * EUCHRE_ACTION_COUNT);
     if (!euchre_observe(&env->game, env->observation_seat, observation)) {
         return EUCHRE_ENV_ERROR;
@@ -47,6 +63,11 @@ static EuchreEnvStatus advance_to_decision(
     for (int action_number = 0; action_number < MAX_ENV_ACTIONS_PER_HAND;
          ++action_number) {
         if (env->game.phase == EUCHRE_HAND_COMPLETE) {
+            if (env->match_mode && env->game.score[0] < env->target_score &&
+                env->game.score[1] < env->target_score) {
+                euchre_deal(&env->game);
+                continue;
+            }
             return finish_hand(env, observation, legal_actions, reward);
         }
 
@@ -116,6 +137,8 @@ EuchreEnvStatus euchre_env_reset_with_dealer(
     env->observation_seat = learning_seat;
     env->opponent_state = seed ^ UINT64_C(0xa0761d6478bd642f);
     env->active = true;
+    env->match_mode = false;
+    env->target_score = 10;
     env->game.dealer = (dealer + EUCHRE_PLAYERS - 1) % EUCHRE_PLAYERS;
     euchre_deal(&env->game);
 
@@ -147,9 +170,35 @@ EuchreEnvStatus euchre_env_reset_team_with_dealer(
     env->observation_seat = controlled_team;
     env->opponent_state = seed ^ UINT64_C(0xa0761d6478bd642f);
     env->active = true;
+    env->match_mode = false;
+    env->target_score = 10;
     env->game.dealer = (dealer + EUCHRE_PLAYERS - 1) % EUCHRE_PLAYERS;
     euchre_deal(&env->game);
 
+    return advance_to_decision(env, observation, legal_actions, reward);
+}
+
+EuchreEnvStatus euchre_env_reset_team_match(
+    EuchreEnv *env, uint64_t seed, int controlled_team, int starting_dealer,
+    int target_score, EuchreObservation *observation,
+    bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
+    if (env == NULL || observation == NULL || legal_actions == NULL ||
+        reward == NULL || controlled_team < 0 || controlled_team > 1 ||
+        starting_dealer < 0 || starting_dealer >= EUCHRE_PLAYERS ||
+        target_score <= 0) return EUCHRE_ENV_ERROR;
+
+    euchre_init(&env->game, seed);
+    env->controlled_seats = (1U << controlled_team) |
+                            (1U << (controlled_team + 2));
+    env->reward_team = controlled_team;
+    env->observation_seat = controlled_team;
+    env->opponent_state = seed ^ UINT64_C(0xa0761d6478bd642f);
+    env->active = true;
+    env->match_mode = true;
+    env->target_score = target_score;
+    env->game.dealer =
+        (starting_dealer + EUCHRE_PLAYERS - 1) % EUCHRE_PLAYERS;
+    euchre_deal(&env->game);
     return advance_to_decision(env, observation, legal_actions, reward);
 }
 

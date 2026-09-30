@@ -180,6 +180,51 @@ class BridgeIntegrationTests(unittest.TestCase):
                                         dealer=dealer)
                 self.assertEqual(result.observation[2], dealer)
 
+    def test_private_match_reaches_ten_with_capped_reward(self) -> None:
+        with EuchreEnv() as env:
+            result = env.reset_match(1234, controlled_team=0,
+                                     starting_dealer=2)
+            dealers = set()
+            while not result.done:
+                self.assertEqual(result.observation[1] % 2, 0)
+                dealers.add(result.observation[2])
+                action = next(
+                    index
+                    for index, enabled in enumerate(result.action_mask)
+                    if enabled
+                )
+                result = env.step(action)
+            score0, score1 = result.observation[18:20]
+            self.assertTrue(score0 >= 10 or score1 >= 10)
+            self.assertEqual(result.reward, min(score0, 10) - min(score1, 10))
+            self.assertEqual(dealers, {0, 1, 2, 3})
+
+    def test_zero_copy_match_batch_completes(self) -> None:
+        with EuchreBatchEnv(2) as batch:
+            buffers = batch.reset_match_buffers(
+                seeds=[101, 202], controlled_teams=[0, 1],
+                starting_dealers=[0, 3], target_scores=[10, 10],
+            )
+            while not all(status == 1 for status in buffers.statuses):
+                for environment in range(2):
+                    buffers.reset_flags[environment] = 0
+                    if buffers.statuses[environment] == 1:
+                        continue
+                    mask_start = environment * ACTION_COUNT
+                    buffers.actions[environment] = next(
+                        action for action in range(ACTION_COUNT)
+                        if buffers.action_masks[mask_start + action]
+                    )
+                buffers = batch.advance_match_buffers()
+            for environment, team in enumerate((0, 1)):
+                start = environment * OBSERVATION_SIZE
+                score0 = buffers.observations[start + 18]
+                score1 = buffers.observations[start + 19]
+                expected = min((score0, score1)[team], 10) - min(
+                    (score0, score1)[1 - team], 10
+                )
+                self.assertEqual(buffers.rewards[environment], expected)
+
 
 if __name__ == "__main__":
     unittest.main()

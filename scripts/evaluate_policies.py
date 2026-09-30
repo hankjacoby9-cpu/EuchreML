@@ -9,6 +9,7 @@ from euchre_ml.evaluation import (
     PairedEvaluation,
     PolicySummary,
     evaluate_paired,
+    evaluate_paired_matches,
     evaluate_paired_teams,
 )
 from euchre_ml.neural_policy import NeuralPolicy
@@ -82,6 +83,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-a")
     parser.add_argument("--checkpoint-b")
     parser.add_argument("--control", choices=("seat", "team"), default="seat")
+    parser.add_argument("--match", action="store_true")
     parser.add_argument(
         "--seeds",
         type=int,
@@ -120,11 +122,38 @@ def load_policy(name: str, checkpoint: str):
 
 def main() -> None:
     args = parse_args()
+    policy_a = load_policy(args.policy_a, args.checkpoint_a)
+    policy_b = load_policy(args.policy_b, args.checkpoint_b)
+    seeds = range(args.seed_start, args.seed_start + args.seeds)
+    if args.match:
+        if args.control != "team":
+            raise SystemExit("--match requires --control team")
+        result = evaluate_paired_matches(
+            policy_a, policy_b, seeds, args.policy_a, args.policy_b,
+            args.bootstrap_samples,
+        )
+        print(f"Paired match evaluation: {result.policy_a} vs {result.policy_b}")
+        print(f"Pairs: {result.pairs} (4 starting dealers × 2 partnerships)")
+        print(
+            f"Match wins: {result.policy_a}={result.wins_a}, "
+            f"{result.policy_b}={result.wins_b}"
+        )
+        print(
+            f"Paired win advantage: {result.paired_win_advantage:+.4f} "
+            f"[{result.win_confidence_interval[0]:+.4f}, "
+            f"{result.win_confidence_interval[1]:+.4f}]"
+        )
+        print(
+            f"Capped margin advantage: {result.capped_margin_advantage:+.4f} "
+            f"[{result.margin_confidence_interval[0]:+.4f}, "
+            f"{result.margin_confidence_interval[1]:+.4f}]"
+        )
+        return
     evaluator = evaluate_paired if args.control == "seat" else evaluate_paired_teams
     evaluation = evaluator(
-        load_policy(args.policy_a, args.checkpoint_a),
-        load_policy(args.policy_b, args.checkpoint_b),
-        range(args.seed_start, args.seed_start + args.seeds),
+        policy_a,
+        policy_b,
+        seeds,
         policy_a_name=args.policy_a,
         policy_b_name=args.policy_b,
         bootstrap_samples=args.bootstrap_samples,
