@@ -93,6 +93,37 @@ interval. It also breaks advantage down by seat and reports bidding, euchre,
 sweep, lone-hand, and decision-category statistics. Available reference
 policies are `first`, `random`, and `heuristic`.
 
+## Evolutionary training
+
+Train a small masked neural policy with mirrored positive and negative weight
+mutations:
+
+```sh
+make train-evolution
+```
+
+The only fitness signal is the candidate's paired team score margin relative
+to the heuristic on identical deals. Training and validation use disjoint seed
+ranges, and the best validation policy is saved under `checkpoints/`.
+
+The observation encoder expands public categorical values such as seats,
+suits, phases, cards, and history entries into one-hot features. The network
+produces all 35 action scores, after which illegal actions are masked before
+selection. Customize small experiments with:
+
+```sh
+.venv/bin/python scripts/train_evolution.py --generations 10 \
+    --mutation-pairs 8 --training-seeds 256 --validation-seeds 512
+```
+
+Evaluate a saved policy on a separate, locked seed range:
+
+```sh
+.venv/bin/python scripts/evaluate_policies.py --policy-a neural \
+    --checkpoint-a checkpoints/evolution_best.npz --policy-b heuristic \
+    --seed-start 2000001 --seeds 10000
+```
+
 ## Design boundary
 
 `EuchreGame` owns the rules and complete state. Each `EuchrePolicy` receives an

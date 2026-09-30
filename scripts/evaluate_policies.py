@@ -4,6 +4,7 @@
 import argparse
 
 from euchre_ml.evaluation import PairedEvaluation, PolicySummary, evaluate_paired
+from euchre_ml.neural_policy import NeuralPolicy
 from euchre_ml.policies import POLICIES
 
 
@@ -63,8 +64,11 @@ def print_evaluation(evaluation: PairedEvaluation) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policy-a", choices=POLICIES, default="heuristic")
-    parser.add_argument("--policy-b", choices=POLICIES, default="random")
+    policy_names = (*POLICIES, "neural")
+    parser.add_argument("--policy-a", choices=policy_names, default="heuristic")
+    parser.add_argument("--policy-b", choices=policy_names, default="random")
+    parser.add_argument("--checkpoint-a")
+    parser.add_argument("--checkpoint-b")
     parser.add_argument(
         "--seeds",
         type=int,
@@ -76,14 +80,22 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.seeds <= 0 or args.bootstrap_samples <= 0:
         parser.error("seed and bootstrap counts must be positive")
+    if args.policy_a == "neural" and not args.checkpoint_a:
+        parser.error("--checkpoint-a is required for neural policy A")
+    if args.policy_b == "neural" and not args.checkpoint_b:
+        parser.error("--checkpoint-b is required for neural policy B")
     return args
+
+
+def load_policy(name: str, checkpoint: str):
+    return NeuralPolicy.load(checkpoint) if name == "neural" else POLICIES[name]
 
 
 def main() -> None:
     args = parse_args()
     evaluation = evaluate_paired(
-        POLICIES[args.policy_a],
-        POLICIES[args.policy_b],
+        load_policy(args.policy_a, args.checkpoint_a),
+        load_policy(args.policy_b, args.checkpoint_b),
         range(args.seed_start, args.seed_start + args.seeds),
         policy_a_name=args.policy_a,
         policy_b_name=args.policy_b,
