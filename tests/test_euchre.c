@@ -1,9 +1,13 @@
 #include "euchre.h"
+#include "euchre_bridge.h"
+#include "euchre_encode.h"
+#include "euchre_env.h"
 #include "euchre_policy.h"
 #include "euchre_sim.h"
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #define WINNING_SCORE 10
 #define MAX_HANDS_PER_MATCH 1000
@@ -36,6 +40,124 @@ static EuchreAction first_card_action(
         if (legal[card_id]) return (EuchreAction)card_id;
     }
     return EUCHRE_ACTION_INVALID;
+}
+
+/* Return the first action of any kind enabled by a policy mask. */
+static EuchreAction first_legal_action(
+    const bool legal[EUCHRE_ACTION_COUNT]) {
+    for (int action = 0; action < EUCHRE_ACTION_COUNT; ++action) {
+        if (legal[action]) return (EuchreAction)action;
+    }
+    return EUCHRE_ACTION_INVALID;
+}
+
+/* Run every seat through decision-point episodes and require real choices only. */
+static void test_decision_point_environment(void) {
+    const uint64_t seeds[] = {1, 42, 2026, UINT64_C(0xabcddcba)};
+    EuchreEnv *env = euchre_env_create();
+    CHECK(env != NULL);
+
+    for (int seat = 0; seat < EUCHRE_PLAYERS; ++seat) {
+        for (size_t seed_index = 0;
+             seed_index < sizeof(seeds) / sizeof(seeds[0]); ++seed_index) {
+            EuchreObservation observation;
+            bool legal[EUCHRE_ACTION_COUNT];
+            int reward = 99;
+            EuchreEnvStatus status = euchre_env_reset(
+                env, seeds[seed_index], seat, &observation, legal, &reward);
+            CHECK(status != EUCHRE_ENV_ERROR);
+            CHECK(reward == 0 || status == EUCHRE_ENV_TERMINAL);
+
+            int decisions = 0;
+            while (status == EUCHRE_ENV_DECISION) {
+                CHECK(observation.player == seat);
+                CHECK(observation.current_player == seat);
+                CHECK(count_mask(legal) > 1);
+                EuchreAction action = first_legal_action(legal);
+                CHECK(action != EUCHRE_ACTION_INVALID);
+                status = euchre_env_step(env, action, &observation, legal,
+                                         &reward);
+                CHECK(status != EUCHRE_ENV_ERROR);
+                if (status == EUCHRE_ENV_DECISION) CHECK(reward == 0);
+                CHECK(++decisions < MAX_HANDS_PER_MATCH);
+            }
+
+            CHECK(status == EUCHRE_ENV_TERMINAL);
+            CHECK(observation.phase == EUCHRE_HAND_COMPLETE);
+            CHECK(count_mask(legal) == 0);
+            CHECK(reward == -4 || reward == -2 || reward == -1 ||
+                  reward == 1 || reward == 2 || reward == 4);
+            CHECK(euchre_env_step(env, EUCHRE_ACTION_PASS, &observation,
+                                  legal, &reward) == EUCHRE_ENV_ERROR);
+        }
+    }
+    euchre_env_destroy(env);
+}
+
+/* Confirm the foreign-language adapter returns only frozen numeric buffers. */
+static void test_numeric_bridge(void) {
+    CHECK(euchre_bridge_layout_version() == EUCHRE_OBSERVATION_LAYOUT_VERSION);
+    CHECK(euchre_bridge_observation_size() == EUCHRE_OBSERVATION_SIZE);
+    CHECK(euchre_bridge_action_count() == EUCHRE_ACTION_COUNT);
+
+    EuchreEnv *env = euchre_bridge_create();
+    CHECK(env != NULL);
+    int16_t observation[EUCHRE_OBSERVATION_SIZE];
+    uint8_t mask[EUCHRE_ENCODED_ACTION_MASK_SIZE];
+    int reward;
+    int status = euchre_bridge_reset(env, 1111, 1, observation, mask, &reward);
+    CHECK(status == EUCHRE_ENV_DECISION);
+
+    int decisions = 0;
+    while (status == EUCHRE_ENV_DECISION) {
+        CHECK(observation[EUCHRE_OBS_VERSION] ==
+              EUCHRE_OBSERVATION_LAYOUT_VERSION);
+        CHECK(observation[EUCHRE_OBS_PLAYER] == 1);
+        int action = -1;
+        int choices = 0;
+        for (int candidate = 0; candidate < EUCHRE_ACTION_COUNT; ++candidate) {
+            CHECK(mask[candidate] == 0 || mask[candidate] == 1);
+            if (mask[candidate]) {
+                if (action < 0) action = candidate;
+                ++choices;
+            }
+        }
+        CHECK(choices > 1);
+        status = euchre_bridge_step(env, action, observation, mask, &reward);
+        CHECK(status != EUCHRE_ENV_ERROR);
+        CHECK(++decisions < MAX_HANDS_PER_MATCH);
+    }
+    CHECK(status == EUCHRE_ENV_TERMINAL);
+    CHECK(observation[EUCHRE_OBS_PHASE] == EUCHRE_HAND_COMPLETE);
+    euchre_bridge_destroy(env);
+}
+
+/* Confirm a rejected learning action does not consume the current decision. */
+static void test_environment_rejects_masked_action(void) {
+    EuchreEnv *env = euchre_env_create();
+    CHECK(env != NULL);
+    EuchreObservation observation;
+    bool legal[EUCHRE_ACTION_COUNT];
+    int reward;
+    CHECK(euchre_env_reset(env, 909, 1, &observation, legal, &reward) ==
+          EUCHRE_ENV_DECISION);
+
+    EuchreAction invalid = EUCHRE_ACTION_INVALID;
+    for (int action = 0; action < EUCHRE_ACTION_COUNT; ++action) {
+        if (!legal[action]) {
+            invalid = (EuchreAction)action;
+            break;
+        }
+    }
+    CHECK(invalid != EUCHRE_ACTION_INVALID);
+    CHECK(euchre_env_step(env, invalid, &observation, legal, &reward) ==
+          EUCHRE_ENV_ERROR);
+
+    EuchreAction valid = first_legal_action(legal);
+    CHECK(valid != EUCHRE_ACTION_INVALID);
+    CHECK(euchre_env_step(env, valid, &observation, legal, &reward) !=
+          EUCHRE_ENV_ERROR);
+    euchre_env_destroy(env);
 }
 
 /* Count every owned or played card and require each deck ID exactly once. */
@@ -164,6 +286,146 @@ static void test_card_conservation(void) {
         CHECK(euchre_policy_legal_actions(&game, legal) > 0);
         CHECK(euchre_apply_action(&game, first_card_action(legal)));
         CHECK(cards_are_conserved(&game));
+    }
+}
+
+/*
+ * Prove hidden state cannot influence an observation while public actions do.
+ * The copied game deliberately contains different opponent cards, kitty cards,
+ * kitty size, and RNG state but must produce the same bytes for the same seat.
+ */
+static void test_observation_privacy_and_public_events(void) {
+    EuchreGame game;
+    bool legal[EUCHRE_ACTION_COUNT];
+    euchre_init(&game, 808);
+    euchre_deal(&game);
+
+    CHECK(euchre_apply_action(&game, EUCHRE_ACTION_ORDER_UP));
+    CHECK(euchre_policy_legal_actions(&game, legal) == EUCHRE_HAND_SIZE + 1);
+    CHECK(euchre_apply_action(&game, first_card_action(legal)));
+
+    /* Record one public play before comparing the two otherwise equal states. */
+    CHECK(euchre_policy_legal_actions(&game, legal) == EUCHRE_HAND_SIZE);
+    CHECK(euchre_apply_action(&game, first_card_action(legal)));
+    int observing_player = game.current_player;
+
+    EuchreObservation baseline;
+    CHECK(euchre_observe(&game, observing_player, &baseline));
+    CHECK(baseline.bid_history_count == 1);
+    CHECK(baseline.trick_history_used[0][game.leader]);
+
+    EuchreGame hidden_changed = game;
+    for (int player = 0; player < EUCHRE_PLAYERS; ++player) {
+        if (player == observing_player) continue;
+        for (size_t i = 0; i < hidden_changed.hands[player].count; ++i) {
+            int old_id = euchre_card_id(hidden_changed.hands[player].cards[i]);
+            hidden_changed.hands[player].cards[i] =
+                euchre_card_from_id((old_id + 7) % EUCHRE_DECK_SIZE);
+        }
+    }
+    for (size_t i = 0; i < EUCHRE_KITTY_SIZE; ++i) {
+        hidden_changed.kitty[i] = euchre_card_from_id((int)(i + 12));
+    }
+    hidden_changed.kitty_count = 1;
+    hidden_changed.rng_state ^= UINT64_C(0xffffffffffffffff);
+
+    EuchreObservation after_hidden_changes;
+    CHECK(euchre_observe(&hidden_changed, observing_player,
+                         &after_hidden_changes));
+    CHECK(memcmp(&baseline, &after_hidden_changes, sizeof(baseline)) == 0);
+    int16_t baseline_buffer[EUCHRE_OBSERVATION_SIZE];
+    int16_t hidden_buffer[EUCHRE_OBSERVATION_SIZE];
+    CHECK(euchre_encode_observation(&baseline, baseline_buffer));
+    CHECK(euchre_encode_observation(&after_hidden_changes, hidden_buffer));
+    CHECK(memcmp(baseline_buffer, hidden_buffer,
+                 sizeof(baseline_buffer)) == 0);
+
+    /* A real public play must immediately appear in that same seat's view. */
+    CHECK(euchre_policy_legal_actions(&game, legal) > 0);
+    EuchreAction public_play = first_card_action(legal);
+    CHECK(euchre_apply_action(&game, public_play));
+
+    EuchreObservation after_public_play;
+    CHECK(euchre_observe(&game, observing_player, &after_public_play));
+    CHECK(memcmp(&baseline, &after_public_play, sizeof(baseline)) != 0);
+    CHECK(after_public_play.cards_played[public_play]);
+    CHECK(after_public_play.trick_history_used[0][observing_player]);
+    CHECK(euchre_card_id(
+              after_public_play.trick_history[0][observing_player]) ==
+          public_play);
+}
+
+/* Confirm every frozen numeric section, sentinel, and byte mask is encoded. */
+static void test_numeric_buffer_layout(void) {
+    EuchreGame game;
+    EuchreObservation observation;
+    bool legal[EUCHRE_ACTION_COUNT];
+    int16_t encoded[EUCHRE_OBSERVATION_SIZE];
+    uint8_t encoded_mask[EUCHRE_ENCODED_ACTION_MASK_SIZE];
+    euchre_init(&game, 1001);
+    euchre_deal(&game);
+
+    CHECK(euchre_apply_action(&game, EUCHRE_ACTION_ORDER_UP));
+    CHECK(euchre_policy_legal_actions(&game, legal) == EUCHRE_HAND_SIZE + 1);
+    CHECK(euchre_apply_action(&game, first_card_action(legal)));
+    int leader = game.current_player;
+    CHECK(euchre_policy_legal_actions(&game, legal) == EUCHRE_HAND_SIZE);
+    EuchreAction led_card = first_card_action(legal);
+    CHECK(euchre_apply_action(&game, led_card));
+
+    CHECK(euchre_observe(&game, game.current_player, &observation));
+    CHECK(euchre_encode_observation(&observation, encoded));
+    CHECK(encoded[EUCHRE_OBS_VERSION] == EUCHRE_OBSERVATION_LAYOUT_VERSION);
+    CHECK(encoded[EUCHRE_OBS_PLAYER] == observation.player);
+    CHECK(encoded[EUCHRE_OBS_DEALER] == observation.dealer);
+    CHECK(encoded[EUCHRE_OBS_CURRENT_PLAYER] == observation.current_player);
+    CHECK(encoded[EUCHRE_OBS_LEADER] == leader);
+    CHECK(encoded[EUCHRE_OBS_CALLER] == observation.caller);
+    CHECK(encoded[EUCHRE_OBS_PHASE] == EUCHRE_PLAYING);
+    CHECK(encoded[EUCHRE_OBS_TRUMP] == (int16_t)observation.trump);
+    CHECK(encoded[EUCHRE_OBS_UPCARD] == euchre_card_id(observation.upcard));
+    CHECK(encoded[EUCHRE_OBS_BID_HISTORY_COUNT] == 1);
+    CHECK(encoded[EUCHRE_OBS_TRICKS_PLAYED] == 0);
+    CHECK(encoded[EUCHRE_OBS_TRICK_PLAYS] == 1);
+
+    int hand_cards = 0;
+    for (int card_id = 0; card_id < EUCHRE_DECK_SIZE; ++card_id) {
+        int expected_hand = 0;
+        for (size_t i = 0; i < observation.hand_count; ++i) {
+            if (euchre_card_id(observation.hand[i]) == card_id) {
+                expected_hand = 1;
+            }
+        }
+        CHECK(encoded[EUCHRE_OBS_HAND_MASK + card_id] == expected_hand);
+        CHECK(encoded[EUCHRE_OBS_PLAYED_MASK + card_id] ==
+              (observation.cards_played[card_id] ? 1 : 0));
+        hand_cards += encoded[EUCHRE_OBS_HAND_MASK + card_id];
+    }
+    CHECK(hand_cards == (int)observation.hand_count);
+    CHECK(encoded[EUCHRE_OBS_PLAYED_MASK + led_card] == 1);
+
+    int bid_offset = EUCHRE_OBS_BID_HISTORY;
+    CHECK(encoded[bid_offset + EUCHRE_ENCODED_BID_PLAYER] ==
+          observation.bid_history[0].player);
+    CHECK(encoded[bid_offset + EUCHRE_ENCODED_BID_ROUND] == 1);
+    CHECK(encoded[bid_offset + EUCHRE_ENCODED_BID_ACTION] ==
+          EUCHRE_BID_ORDER_UP);
+    CHECK(encoded[bid_offset + EUCHRE_ENCODED_BID_SUIT] ==
+          (int16_t)game.trump);
+    CHECK(encoded[bid_offset + EUCHRE_ENCODED_BID_ALONE] == 0);
+    CHECK(encoded[bid_offset + EUCHRE_ENCODED_BID_WIDTH] ==
+          EUCHRE_ENCODED_NONE);
+
+    CHECK(encoded[EUCHRE_OBS_TRICK_HISTORY + leader] == led_card);
+    CHECK(encoded[EUCHRE_OBS_TRICK_LEADERS] == leader);
+    CHECK(encoded[EUCHRE_OBS_TRICK_WINNERS] == EUCHRE_ENCODED_NONE);
+    CHECK(encoded[EUCHRE_OBS_TRICK_HISTORY + EUCHRE_PLAYERS] ==
+          EUCHRE_ENCODED_NONE);
+
+    CHECK(euchre_policy_legal_actions(&game, legal) > 0);
+    CHECK(euchre_encode_action_mask(legal, encoded_mask));
+    for (int action = 0; action < EUCHRE_ACTION_COUNT; ++action) {
+        CHECK(encoded_mask[action] == (legal[action] ? 1 : 0));
     }
 }
 
@@ -453,9 +715,14 @@ static void test_seeded_matches(void) {
 }
 
 int main(void) {
+    test_numeric_bridge();
+    test_decision_point_environment();
+    test_environment_rejects_masked_action();
     test_exact_scoring();
     test_per_game_random_state();
     test_card_conservation();
+    test_observation_privacy_and_public_events();
+    test_numeric_buffer_layout();
     test_bidding_history();
     test_round_one_and_discard_masks();
     test_round_two_masks();

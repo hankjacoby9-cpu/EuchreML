@@ -126,9 +126,21 @@ void euchre_deal(EuchreGame *game) {
     game->makers_team = -1;
     game->sitting_out = -1;
     game->going_alone = false;
+    game->leader = -1;
     game->bid_turns = 0;
     game->bid_history_count = 0;
     memset(game->bid_history, 0, sizeof(game->bid_history));
+    game->trick_plays = 0;
+    game->tricks_played = 0;
+    game->tricks_won[0] = 0;
+    game->tricks_won[1] = 0;
+    memset(game->trick_slot_used, 0, sizeof(game->trick_slot_used));
+    memset(game->trick_history, 0, sizeof(game->trick_history));
+    memset(game->trick_history_used, 0, sizeof(game->trick_history_used));
+    for (int trick = 0; trick < EUCHRE_HAND_SIZE; ++trick) {
+        game->trick_leaders[trick] = -1;
+        game->trick_winners[trick] = -1;
+    }
     game->current_player = next_player(game->dealer);
     game->phase = EUCHRE_BIDDING_ROUND_ONE;
     memset(game->cards_played, 0, sizeof(game->cards_played));

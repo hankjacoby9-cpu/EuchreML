@@ -44,6 +44,7 @@ typedef struct {
     int leader;
     int bid_turns;
     int tricks_played;
+    int trick_plays;
     int tricks_won[2];
     int score[2];
     int caller;

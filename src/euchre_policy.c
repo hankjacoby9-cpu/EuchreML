@@ -50,6 +50,7 @@ bool euchre_observe(const EuchreGame *game, int player,
     observation->leader = game->leader;
     observation->bid_turns = game->bid_turns;
     observation->tricks_played = game->tricks_played;
+    observation->trick_plays = game->trick_plays;
     observation->tricks_won[0] = game->tricks_won[0];
     observation->tricks_won[1] = game->tricks_won[1];
     observation->score[0] = game->score[0];

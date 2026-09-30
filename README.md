@@ -20,9 +20,11 @@ The engine currently implements:
 - interchangeable per-seat policies with stable actions and legal-action masks
 - independent per-game random state for parallel simulations
 - public bidding and per-seat trick history for strategic inference
+- opaque decision-point environments that skip opponents and forced actions
+- a frozen, versioned numeric observation and action-mask layout
 
-Match play to 10 points, interactive input, and the Python bridge are planned
-after the core hand logic is stable.
+The command-line demo supports match play to 10 points, and the Python bridge
+exposes the engine at learning decision points.
 
 ## Build and run
 
@@ -53,6 +55,16 @@ make benchmark
 
 Pass a different hand count directly to `./build/euchre_benchmark` when needed.
 
+Measure the current one-environment CFFI path and interleaved multi-environment
+baseline with:
+
+```sh
+make benchmark-python
+```
+
+The interleaved modes still perform one CFFI call per environment decision.
+They establish the baseline that a future native batch call must improve.
+
 ## Design boundary
 
 `EuchreGame` owns the rules and complete state. Each `EuchrePolicy` receives an
@@ -60,3 +72,37 @@ Pass a different hand count directly to `./build/euchre_benchmark` when needed.
 fixed-size legal-action mask. Card actions use permanent deck IDs rather than
 mutable hand positions. This gives heuristic, human, and learned players the
 same interface without exposing opponents' cards or the kitty.
+
+The observation includes public bidding and trick history. It deliberately has
+no fields for opponent hands, hidden kitty contents, the dealer's discard, or
+internal random-generator state. A noninterference test mutates those hidden
+values and requires the encoded observation to remain byte-for-byte identical.
+
+The foreign-language buffer contract is documented in
+[`docs/numeric-buffer-layout.md`](docs/numeric-buffer-layout.md). It uses a
+fixed 138-value `int16_t` observation and a 35-value `uint8_t` action mask.
+
+## Python CFFI wrapper
+
+Install the package into an isolated Python environment:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip setuptools wheel
+.venv/bin/python -m pip install -e .
+make test-python
+```
+
+The build compiles the C engine into `euchre_ml._native`. Python owns only an
+opaque environment pointer and receives copies of the frozen numeric buffers.
+
+```python
+from euchre_ml import EuchreEnv
+
+with EuchreEnv() as env:
+    result = env.reset(seed=42, learning_seat=0)
+    while not result.done:
+        action = next(i for i, legal in enumerate(result.action_mask) if legal)
+        result = env.step(action)
+    print(result.reward)
+```
