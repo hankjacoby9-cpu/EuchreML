@@ -173,6 +173,13 @@ class BridgeIntegrationTests(unittest.TestCase):
                     teams[index],
                 )
 
+    def test_partnership_reset_honors_every_dealer(self) -> None:
+        with EuchreEnv() as env:
+            for dealer in range(4):
+                result = env.reset_team(77, controlled_team=dealer % 2,
+                                        dealer=dealer)
+                self.assertEqual(result.observation[2], dealer)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -96,10 +96,19 @@ EuchreEnvStatus euchre_env_reset(
     EuchreEnv *env, uint64_t seed, int learning_seat,
     EuchreObservation *observation,
     bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
+    return euchre_env_reset_with_dealer(
+        env, seed, learning_seat, 0, observation, legal_actions, reward);
+}
+
+EuchreEnvStatus euchre_env_reset_with_dealer(
+    EuchreEnv *env, uint64_t seed, int learning_seat, int dealer,
+    EuchreObservation *observation,
+    bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
     if (env == NULL || observation == NULL || legal_actions == NULL ||
         reward == NULL || learning_seat < 0 || learning_seat >= EUCHRE_PLAYERS) {
         return EUCHRE_ENV_ERROR;
     }
+    if (dealer < 0 || dealer >= EUCHRE_PLAYERS) return EUCHRE_ENV_ERROR;
 
     euchre_init(&env->game, seed);
     env->controlled_seats = 1U << learning_seat;
@@ -107,6 +116,7 @@ EuchreEnvStatus euchre_env_reset(
     env->observation_seat = learning_seat;
     env->opponent_state = seed ^ UINT64_C(0xa0761d6478bd642f);
     env->active = true;
+    env->game.dealer = (dealer + EUCHRE_PLAYERS - 1) % EUCHRE_PLAYERS;
     euchre_deal(&env->game);
 
     return advance_to_decision(env, observation, legal_actions, reward);
@@ -116,10 +126,19 @@ EuchreEnvStatus euchre_env_reset_team(
     EuchreEnv *env, uint64_t seed, int controlled_team,
     EuchreObservation *observation,
     bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
+    return euchre_env_reset_team_with_dealer(
+        env, seed, controlled_team, 0, observation, legal_actions, reward);
+}
+
+EuchreEnvStatus euchre_env_reset_team_with_dealer(
+    EuchreEnv *env, uint64_t seed, int controlled_team, int dealer,
+    EuchreObservation *observation,
+    bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
     if (env == NULL || observation == NULL || legal_actions == NULL ||
         reward == NULL || controlled_team < 0 || controlled_team > 1) {
         return EUCHRE_ENV_ERROR;
     }
+    if (dealer < 0 || dealer >= EUCHRE_PLAYERS) return EUCHRE_ENV_ERROR;
 
     euchre_init(&env->game, seed);
     env->controlled_seats = (1U << controlled_team) |
@@ -128,6 +147,7 @@ EuchreEnvStatus euchre_env_reset_team(
     env->observation_seat = controlled_team;
     env->opponent_state = seed ^ UINT64_C(0xa0761d6478bd642f);
     env->active = true;
+    env->game.dealer = (dealer + EUCHRE_PLAYERS - 1) % EUCHRE_PLAYERS;
     euchre_deal(&env->game);
 
     return advance_to_decision(env, observation, legal_actions, reward);

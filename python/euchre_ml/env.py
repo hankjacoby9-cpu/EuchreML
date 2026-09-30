@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 from ._native import ffi, lib
 
@@ -34,6 +34,7 @@ class BatchBuffers:
     reset_flags: memoryview
     seeds: memoryview
     learning_seats: memoryview
+    dealers: memoryview
 
 
 class EuchreEnv:
@@ -64,27 +65,35 @@ class EuchreEnv:
         if hasattr(self, "_env"):
             self.close()
 
-    def reset(self, seed: int, learning_seat: int) -> StepResult:
+    def reset(self, seed: int, learning_seat: int, dealer: int = 0) -> StepResult:
         self._require_open()
-        status = lib.euchre_bridge_reset(
+        if dealer not in range(4):
+            raise ValueError("dealer must be between 0 and 3")
+        status = lib.euchre_bridge_reset_with_dealer(
             self._env,
             seed,
             learning_seat,
+            dealer,
             self._observation,
             self._action_mask,
             self._reward,
         )
         return self._read_result(status)
 
-    def reset_team(self, seed: int, controlled_team: int) -> StepResult:
+    def reset_team(
+        self, seed: int, controlled_team: int, dealer: int = 0
+    ) -> StepResult:
         """Control both partnership seats with an acting-seat-only observation."""
         self._require_open()
         if controlled_team not in (0, 1):
             raise ValueError("controlled_team must be 0 or 1")
-        status = lib.euchre_bridge_reset_team(
+        if dealer not in range(4):
+            raise ValueError("dealer must be between 0 and 3")
+        status = lib.euchre_bridge_reset_team_with_dealer(
             self._env,
             seed,
             controlled_team,
+            dealer,
             self._observation,
             self._action_mask,
             self._reward,
@@ -137,6 +146,7 @@ class EuchreBatchEnv:
         self.environment_count = environment_count
         self._seeds = ffi.new("uint64_t[]", environment_count)
         self._learning_seats = ffi.new("int[]", environment_count)
+        self._dealers = ffi.new("int[]", environment_count)
         self._actions = ffi.new("int[]", environment_count)
         self._reset_flags = ffi.new("uint8_t[]", environment_count)
         self._observations = ffi.new(
@@ -174,6 +184,9 @@ class EuchreBatchEnv:
             ),
             learning_seats=self._view(
                 self._learning_seats, "int", "i", environment_count
+            ),
+            dealers=self._view(
+                self._dealers, "int", "i", environment_count
             ),
         )
 
@@ -250,21 +263,29 @@ class EuchreBatchEnv:
         return self.buffers
 
     def reset_team_buffers(
-        self, seeds: Sequence[int], controlled_teams: Sequence[int]
+        self, seeds: Sequence[int], controlled_teams: Sequence[int],
+        dealers: Optional[Sequence[int]] = None,
     ) -> BatchBuffers:
         """Reset slots in partnership-control mode without copying outputs."""
         self._require_open()
         self._require_count(seeds, "seeds")
         self._require_count(controlled_teams, "controlled_teams")
+        if dealers is None:
+            dealers = [0] * self.environment_count
+        self._require_count(dealers, "dealers")
         for index in range(self.environment_count):
             if controlled_teams[index] not in (0, 1):
                 raise ValueError("controlled teams must be 0 or 1")
             self._seeds[index] = seeds[index]
             self._learning_seats[index] = controlled_teams[index]
-        success = lib.euchre_bridge_batch_reset_teams(
+            if dealers[index] not in range(4):
+                raise ValueError("dealers must be between 0 and 3")
+            self._dealers[index] = dealers[index]
+        success = lib.euchre_bridge_batch_reset_teams_with_dealers(
             self._batch,
             self._seeds,
             self._learning_seats,
+            self._dealers,
             self._observations,
             self._action_masks,
             self._rewards,
@@ -293,12 +314,13 @@ class EuchreBatchEnv:
     def advance_team_buffers(self) -> BatchBuffers:
         """Step or replace partnership-controlled slots from writable views."""
         self._require_open()
-        success = lib.euchre_bridge_batch_advance_teams(
+        success = lib.euchre_bridge_batch_advance_teams_with_dealers(
             self._batch,
             self._actions,
             self._reset_flags,
             self._seeds,
             self._learning_seats,
+            self._dealers,
             self._observations,
             self._action_masks,
             self._rewards,

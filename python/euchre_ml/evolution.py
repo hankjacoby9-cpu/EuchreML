@@ -19,6 +19,7 @@ from .policies import Policy, simple_heuristic_policy
 class EvaluationCase:
     seed: int
     seat: int
+    dealer: int
     baseline_reward: int
 
 
@@ -52,8 +53,12 @@ def build_cases(
 ) -> Tuple[EvaluationCase, ...]:
     """Evaluate the control policy once so every candidate uses paired rewards."""
     return tuple(
-        EvaluationCase(seed, team, run_team_episode(baseline, seed, team).reward)
+        EvaluationCase(
+            seed, team, dealer,
+            run_team_episode(baseline, seed, team, dealer).reward,
+        )
         for seed in seeds
+        for dealer in range(4)
         for team in range(2)
     )
 
@@ -81,6 +86,7 @@ def evaluate_genomes_batched(
         buffers = batch.reset_team_buffers(
             [case.seed for case in initial_cases],
             [case.seat for case in initial_cases],
+            [case.dealer for case in initial_cases],
         )
         observations = np.frombuffer(buffers.observations, dtype=np.int16).reshape(
             environment_count, OBSERVATION_SIZE
@@ -94,6 +100,7 @@ def evaluate_genomes_batched(
         reset_flags = np.frombuffer(buffers.reset_flags, dtype=np.uint8)
         seeds = np.frombuffer(buffers.seeds, dtype=np.uint64)
         learning_seats = np.frombuffer(buffers.learning_seats, dtype=np.int32)
+        dealers = np.frombuffer(buffers.dealers, dtype=np.int32)
 
         while np.any(completed < len(cases)):
             reset_flags.fill(0)
@@ -113,6 +120,7 @@ def evaluate_genomes_batched(
                         next_case_data = cases[next_case]
                         seeds[slot] = next_case_data.seed
                         learning_seats[slot] = next_case_data.seat
+                        dealers[slot] = next_case_data.dealer
                         reset_flags[slot] = 1
                     else:
                         active[slot] = False

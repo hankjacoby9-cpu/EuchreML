@@ -4,11 +4,12 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence
+from typing import List, Sequence, Tuple
 
 import numpy as np
 
 from .bidding_policy import BiddingPolicy, initialize_bidding_genome
+from .bidding_policy import PARAMETER_NAMES
 from .evaluation import run_team_episode
 from .evolution import EvaluationCase, build_cases
 
@@ -24,6 +25,7 @@ class BiddingEvolutionConfig:
     seed: int = 2026
     checkpoint_path: str = "checkpoints/bidding_best.npz"
     log_path: str = "checkpoints/bidding_history.jsonl"
+    disabled_parameters: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,7 @@ def evaluate_bidding_genome(
 ) -> float:
     policy = BiddingPolicy(genome)
     differences = [
-        run_team_episode(policy, case.seed, case.seat).reward
+        run_team_episode(policy, case.seed, case.seat, case.dealer).reward
         - case.baseline_reward
         for case in cases
     ]
@@ -61,6 +63,14 @@ def train_bidding_evolution(
 
     rng = np.random.default_rng(config.seed)
     genome = initialize_bidding_genome()
+    unknown = set(config.disabled_parameters) - set(PARAMETER_NAMES)
+    if unknown:
+        raise ValueError(f"Unknown disabled parameters: {sorted(unknown)}")
+    enabled = np.asarray(
+        [name not in config.disabled_parameters for name in PARAMETER_NAMES],
+        dtype=np.float32,
+    )
+    genome *= enabled
     validation_start = 1_000_001
     validation_cases = build_cases(
         range(validation_start, validation_start + config.validation_seeds)
@@ -85,6 +95,7 @@ def train_bidding_evolution(
 
         for _ in range(config.mutation_pairs):
             noise = rng.standard_normal(genome.shape, dtype=np.float32)
+            noise *= enabled
             positive_genome = genome + config.mutation_scale * noise
             negative_genome = genome - config.mutation_scale * noise
             positive = evaluate_bidding_genome(positive_genome, training_cases)
@@ -107,6 +118,7 @@ def train_bidding_evolution(
             if gradient_norm > 1.0:
                 gradient /= gradient_norm
             genome += config.learning_rate * gradient
+            genome *= enabled
             training_advantage = evaluate_bidding_genome(genome, training_cases)
 
         validation_advantage = evaluate_bidding_genome(genome, validation_cases)

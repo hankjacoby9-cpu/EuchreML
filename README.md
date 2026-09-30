@@ -129,7 +129,9 @@ Evaluate a saved policy on a separate, locked seed range:
 
 Use `--control team` for checkpoints trained to control both partners. The
 shared policy is called separately with each acting seat's private observation;
-the partners never receive a combined hand or shared policy memory.
+the partners never receive a combined hand or shared policy memory. Team-mode
+training and evaluation rotate every deal through all four dealers and both
+partnerships.
 
 ## Interpretable bidding evolution
 
@@ -147,6 +149,21 @@ selection uses only paired team score margin. Inspectable weights are printed
 after training and stored with the checkpoint. Upcard strength follows Euchre
 trump order (`9 < 10 < Q < K < A < right bower`), and the feature layout is
 versioned so checkpoints cannot silently change meaning.
+
+Repeat training runs and report parameter stability with
+`scripts/bidding_stability.py`. Pass parameter names through `--disable` to
+run true retrained ablations. `scripts/calibrate_bidding.py` reports call rates
+and team margin by predicted-score bucket, explicitly as descriptive rather
+than counterfactual evidence.
+
+Once bidding is fixed, evolve a separate interpretable legal-card score with:
+
+```sh
+make train-card-play
+```
+
+This card policy sees only the acting player's observation and public trick
+state. Its fitness remains final paired team margin.
 
 ## Design boundary
 

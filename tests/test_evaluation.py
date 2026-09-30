@@ -47,7 +47,7 @@ class EvaluationTests(unittest.TestCase):
             range(1, 11),
             bootstrap_samples=25,
         )
-        self.assertEqual(evaluation.pairs, 20)
+        self.assertEqual(evaluation.pairs, 80)
         self.assertEqual(evaluation.mean_advantage, 0.0)
         self.assertEqual(evaluation.confidence_interval, (0.0, 0.0))
         self.assertEqual(evaluation.advantage_by_seat, (0.0, 0.0))

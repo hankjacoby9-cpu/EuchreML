@@ -54,7 +54,7 @@ class EvolutionTests(unittest.TestCase):
         policy = NeuralPolicy(genome, shape)
         cases = build_cases(range(1, 9))
         sequential = np.mean([
-            run_team_episode(policy, case.seed, case.seat).reward
+            run_team_episode(policy, case.seed, case.seat, case.dealer).reward
             - case.baseline_reward
             for case in cases
         ])

@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--checkpoint", default="checkpoints/bidding_best.npz")
     parser.add_argument("--log", default="checkpoints/bidding_history.jsonl")
+    parser.add_argument("--disable", nargs="*", default=[])
     return parser.parse_args()
 
 
@@ -36,6 +37,7 @@ def main() -> None:
         seed=args.seed,
         checkpoint_path=args.checkpoint,
         log_path=args.log,
+        disabled_parameters=tuple(args.disable),
     )
     print("Objective: paired team score margin; card play fixed to heuristic")
     for result in train_bidding_evolution(config):

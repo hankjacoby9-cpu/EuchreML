@@ -61,6 +61,23 @@ class BiddingEvolutionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unversioned"):
                 BiddingPolicy.load(checkpoint)
 
+    def test_disabled_parameter_remains_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "ablation.npz"
+            train_bidding_evolution(
+                BiddingEvolutionConfig(
+                    generations=1,
+                    mutation_pairs=1,
+                    training_seeds=1,
+                    validation_seeds=1,
+                    checkpoint_path=str(checkpoint),
+                    log_path=str(Path(directory) / "ablation.jsonl"),
+                    disabled_parameters=("void_suits",),
+                )
+            )
+            policy = BiddingPolicy.load(checkpoint)
+            self.assertEqual(policy.named_parameters()["void_suits"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

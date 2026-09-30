@@ -121,7 +121,9 @@ def run_episode(policy: Policy, seed: int, seat: int) -> EpisodeResult:
     )
 
 
-def run_team_episode(policy: Policy, seed: int, team: int) -> EpisodeResult:
+def run_team_episode(
+    policy: Policy, seed: int, team: int, dealer: int = 0
+) -> EpisodeResult:
     """Run one shared policy for a partnership with separate per-seat RNGs."""
     if team not in (0, 1):
         raise ValueError("team must be 0 or 1")
@@ -133,7 +135,7 @@ def run_team_episode(policy: Policy, seed: int, team: int) -> EpisodeResult:
     calls = 0
 
     with EuchreEnv() as env:
-        result = env.reset_team(seed=seed, controlled_team=team)
+        result = env.reset_team(seed=seed, controlled_team=team, dealer=dealer)
         while not result.done:
             acting_seat = result.observation[1]
             if acting_seat not in policy_rngs:
@@ -259,14 +261,15 @@ def evaluate_paired_teams(
     differences: List[int] = []
     team_differences: List[List[int]] = [[], []]
     for seed in seed_values:
-        for team in range(2):
-            result_a = run_team_episode(policy_a, seed, team)
-            result_b = run_team_episode(policy_b, seed, team)
-            summary_a.add(result_a)
-            summary_b.add(result_b)
-            difference = result_a.reward - result_b.reward
-            differences.append(difference)
-            team_differences[team].append(difference)
+        for dealer in range(4):
+            for team in range(2):
+                result_a = run_team_episode(policy_a, seed, team, dealer)
+                result_b = run_team_episode(policy_b, seed, team, dealer)
+                summary_a.add(result_a)
+                summary_b.add(result_b)
+                difference = result_a.reward - result_b.reward
+                differences.append(difference)
+                team_differences[team].append(difference)
 
     interval = _bootstrap_interval(
         differences, bootstrap_samples, confidence, seed=0xE0C4E
