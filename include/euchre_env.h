@@ -26,6 +26,12 @@ EuchreEnvStatus euchre_env_reset(
     EuchreObservation *observation,
     bool legal_actions[EUCHRE_ACTION_COUNT], int *reward);
 
+/* Control both seats on one partnership while observing only the acting seat. */
+EuchreEnvStatus euchre_env_reset_team(
+    EuchreEnv *env, uint64_t seed, int controlled_team,
+    EuchreObservation *observation,
+    bool legal_actions[EUCHRE_ACTION_COUNT], int *reward);
+
 /*
  * Apply one learning-seat action and advance to its next meaningful decision.
  * Reward remains zero until terminal, then equals team points minus opponents'.

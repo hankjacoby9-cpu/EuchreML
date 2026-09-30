@@ -19,6 +19,11 @@ int euchre_bridge_reset(
     int16_t observation[EUCHRE_OBSERVATION_SIZE],
     uint8_t action_mask[EUCHRE_ENCODED_ACTION_MASK_SIZE], int *reward);
 
+int euchre_bridge_reset_team(
+    EuchreEnv *env, uint64_t seed, int controlled_team,
+    int16_t observation[EUCHRE_OBSERVATION_SIZE],
+    uint8_t action_mask[EUCHRE_ENCODED_ACTION_MASK_SIZE], int *reward);
+
 int euchre_bridge_step(
     EuchreEnv *env, int action,
     int16_t observation[EUCHRE_OBSERVATION_SIZE],
@@ -34,6 +39,11 @@ int euchre_bridge_batch_reset(
     int16_t observations[], uint8_t action_masks[], int rewards[],
     int statuses[]);
 
+int euchre_bridge_batch_reset_teams(
+    EuchreBatchEnv *batch, const uint64_t seeds[], const int teams[],
+    int16_t observations[], uint8_t action_masks[], int rewards[],
+    int statuses[]);
+
 int euchre_bridge_batch_step(
     EuchreBatchEnv *batch, const int actions[], int16_t observations[],
     uint8_t action_masks[], int rewards[], int statuses[]);
@@ -42,6 +52,11 @@ int euchre_bridge_batch_step(
 int euchre_bridge_batch_advance(
     EuchreBatchEnv *batch, const int actions[], const uint8_t reset_flags[],
     const uint64_t seeds[], const int learning_seats[], int16_t observations[],
+    uint8_t action_masks[], int rewards[], int statuses[]);
+
+int euchre_bridge_batch_advance_teams(
+    EuchreBatchEnv *batch, const int actions[], const uint8_t reset_flags[],
+    const uint64_t seeds[], const int teams[], int16_t observations[],
     uint8_t action_masks[], int rewards[], int statuses[]);
 
 /* Runtime queries let bindings reject incompatible compiled libraries. */

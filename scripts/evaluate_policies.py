@@ -3,7 +3,12 @@
 
 import argparse
 
-from euchre_ml.evaluation import PairedEvaluation, PolicySummary, evaluate_paired
+from euchre_ml.evaluation import (
+    PairedEvaluation,
+    PolicySummary,
+    evaluate_paired,
+    evaluate_paired_teams,
+)
 from euchre_ml.neural_policy import NeuralPolicy
 from euchre_ml.policies import POLICIES
 
@@ -37,13 +42,18 @@ def print_summary(name: str, summary: PolicySummary) -> None:
     print(f"  decisions:        {decisions}")
 
 
-def print_evaluation(evaluation: PairedEvaluation) -> None:
+def print_evaluation(evaluation: PairedEvaluation, control: str) -> None:
     low, high = evaluation.confidence_interval
     print(
         f"Paired duplicate-deal evaluation: {evaluation.policy_a} vs "
         f"{evaluation.policy_b}"
     )
-    print(f"Pairs: {evaluation.pairs} (every seed rotated through all 4 seats)")
+    rotation = (
+        "every seed rotated through all 4 seats"
+        if control == "seat"
+        else "every seed rotated through both partnerships"
+    )
+    print(f"Pairs: {evaluation.pairs} ({rotation})")
     print(f"Mean paired advantage: {evaluation.mean_advantage:+.4f} points/hand")
     print(f"95% bootstrap CI:      [{low:+.4f}, {high:+.4f}]")
     print(
@@ -52,9 +62,9 @@ def print_evaluation(evaluation: PairedEvaluation) -> None:
         f"{evaluation.paired_losses}"
     )
     print(
-        "Advantage by seat:      "
+        f"Advantage by {control}:      "
         + ", ".join(
-            f"seat {seat}={advantage:+.4f}"
+            f"{control} {seat}={advantage:+.4f}"
             for seat, advantage in enumerate(evaluation.advantage_by_seat)
         )
     )
@@ -69,6 +79,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-b", choices=policy_names, default="random")
     parser.add_argument("--checkpoint-a")
     parser.add_argument("--checkpoint-b")
+    parser.add_argument("--control", choices=("seat", "team"), default="seat")
     parser.add_argument(
         "--seeds",
         type=int,
@@ -93,7 +104,8 @@ def load_policy(name: str, checkpoint: str):
 
 def main() -> None:
     args = parse_args()
-    evaluation = evaluate_paired(
+    evaluator = evaluate_paired if args.control == "seat" else evaluate_paired_teams
+    evaluation = evaluator(
         load_policy(args.policy_a, args.checkpoint_a),
         load_policy(args.policy_b, args.checkpoint_b),
         range(args.seed_start, args.seed_start + args.seeds),
@@ -101,7 +113,7 @@ def main() -> None:
         policy_b_name=args.policy_b,
         bootstrap_samples=args.bootstrap_samples,
     )
-    print_evaluation(evaluation)
+    print_evaluation(evaluation, args.control)
 
 
 if __name__ == "__main__":

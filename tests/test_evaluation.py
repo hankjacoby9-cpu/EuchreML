@@ -1,6 +1,10 @@
 import unittest
 
-from euchre_ml.evaluation import evaluate_paired, run_episode
+from euchre_ml.evaluation import (
+    evaluate_paired,
+    evaluate_paired_teams,
+    run_episode,
+)
 from euchre_ml.policies import (
     first_legal_policy,
     random_legal_policy,
@@ -35,6 +39,18 @@ class EvaluationTests(unittest.TestCase):
                     episode = run_episode(policy, seed=42, seat=seat)
                     self.assertIn(episode.reward, (-4, -2, -1, 1, 2, 4))
                     self.assertGreater(sum(episode.decisions.values()), 0)
+
+    def test_identical_partnership_policy_has_zero_advantage(self) -> None:
+        evaluation = evaluate_paired_teams(
+            random_legal_policy,
+            random_legal_policy,
+            range(1, 11),
+            bootstrap_samples=25,
+        )
+        self.assertEqual(evaluation.pairs, 20)
+        self.assertEqual(evaluation.mean_advantage, 0.0)
+        self.assertEqual(evaluation.confidence_interval, (0.0, 0.0))
+        self.assertEqual(evaluation.advantage_by_seat, (0.0, 0.0))
 
 
 if __name__ == "__main__":

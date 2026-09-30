@@ -94,6 +94,43 @@ static void test_decision_point_environment(void) {
     euchre_env_destroy(env);
 }
 
+/* Require team control to expose only the currently acting partner's view. */
+static void test_partnership_decision_environment(void) {
+    EuchreEnv *env = euchre_env_create();
+    CHECK(env != NULL);
+
+    for (int team = 0; team < 2; ++team) {
+        bool observed_partner[EUCHRE_PLAYERS] = {false};
+        for (uint64_t seed = 1; seed <= 20; ++seed) {
+            EuchreObservation observation;
+            bool legal[EUCHRE_ACTION_COUNT];
+            int reward;
+            EuchreEnvStatus status = euchre_env_reset_team(
+                env, seed, team, &observation, legal, &reward);
+            CHECK(status != EUCHRE_ENV_ERROR);
+
+            while (status == EUCHRE_ENV_DECISION) {
+                CHECK(observation.player == observation.current_player);
+                CHECK(observation.player % 2 == team);
+                CHECK(count_mask(legal) > 1);
+                observed_partner[observation.player] = true;
+                status = euchre_env_step(
+                    env, first_legal_action(legal), &observation, legal,
+                    &reward);
+                CHECK(status != EUCHRE_ENV_ERROR);
+            }
+            CHECK(status == EUCHRE_ENV_TERMINAL);
+            CHECK(observation.player % 2 == team);
+            CHECK(count_mask(legal) == 0);
+        }
+        CHECK(observed_partner[team]);
+        CHECK(observed_partner[team + 2]);
+        CHECK(!observed_partner[1 - team]);
+        CHECK(!observed_partner[3 - team]);
+    }
+    euchre_env_destroy(env);
+}
+
 /* Confirm the foreign-language adapter returns only frozen numeric buffers. */
 static void test_numeric_bridge(void) {
     CHECK(euchre_bridge_layout_version() == EUCHRE_OBSERVATION_LAYOUT_VERSION);
@@ -717,6 +754,7 @@ static void test_seeded_matches(void) {
 int main(void) {
     test_numeric_bridge();
     test_decision_point_environment();
+    test_partnership_decision_environment();
     test_environment_rejects_masked_action();
     test_exact_scoring();
     test_per_game_random_state();

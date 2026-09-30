@@ -14,6 +14,9 @@ ffibuilder.cdef(
     int euchre_bridge_reset(EuchreEnv *env, uint64_t seed, int learning_seat,
                             int16_t *observation, uint8_t *action_mask,
                             int *reward);
+    int euchre_bridge_reset_team(EuchreEnv *env, uint64_t seed,
+                                 int controlled_team, int16_t *observation,
+                                 uint8_t *action_mask, int *reward);
     int euchre_bridge_step(EuchreEnv *env, int action, int16_t *observation,
                            uint8_t *action_mask, int *reward);
 
@@ -26,6 +29,12 @@ ffibuilder.cdef(
                                   int16_t *observations,
                                   uint8_t *action_masks, int *rewards,
                                   int *statuses);
+    int euchre_bridge_batch_reset_teams(EuchreBatchEnv *batch,
+                                        const uint64_t *seeds,
+                                        const int *teams,
+                                        int16_t *observations,
+                                        uint8_t *action_masks, int *rewards,
+                                        int *statuses);
     int euchre_bridge_batch_step(EuchreBatchEnv *batch, const int *actions,
                                  int16_t *observations,
                                  uint8_t *action_masks, int *rewards,
@@ -38,6 +47,14 @@ ffibuilder.cdef(
                                     int16_t *observations,
                                     uint8_t *action_masks, int *rewards,
                                     int *statuses);
+    int euchre_bridge_batch_advance_teams(EuchreBatchEnv *batch,
+                                          const int *actions,
+                                          const uint8_t *reset_flags,
+                                          const uint64_t *seeds,
+                                          const int *teams,
+                                          int16_t *observations,
+                                          uint8_t *action_masks, int *rewards,
+                                          int *statuses);
 
     int euchre_bridge_layout_version(void);
     int euchre_bridge_observation_size(void);

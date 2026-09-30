@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from euchre_ml.env import EuchreEnv
-from euchre_ml.evaluation import run_episode
+from euchre_ml.evaluation import run_team_episode
 from euchre_ml.evolution import (
     EvolutionConfig,
     build_cases,
@@ -54,7 +54,7 @@ class EvolutionTests(unittest.TestCase):
         policy = NeuralPolicy(genome, shape)
         cases = build_cases(range(1, 9))
         sequential = np.mean([
-            run_episode(policy, case.seed, case.seat).reward
+            run_team_episode(policy, case.seed, case.seat).reward
             - case.baseline_reward
             for case in cases
         ])

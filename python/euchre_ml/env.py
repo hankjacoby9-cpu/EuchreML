@@ -76,6 +76,21 @@ class EuchreEnv:
         )
         return self._read_result(status)
 
+    def reset_team(self, seed: int, controlled_team: int) -> StepResult:
+        """Control both partnership seats with an acting-seat-only observation."""
+        self._require_open()
+        if controlled_team not in (0, 1):
+            raise ValueError("controlled_team must be 0 or 1")
+        status = lib.euchre_bridge_reset_team(
+            self._env,
+            seed,
+            controlled_team,
+            self._observation,
+            self._action_mask,
+            self._reward,
+        )
+        return self._read_result(status)
+
     def step(self, action: int) -> StepResult:
         self._require_open()
         status = lib.euchre_bridge_step(
@@ -234,10 +249,51 @@ class EuchreBatchEnv:
         self._check_success(success)
         return self.buffers
 
+    def reset_team_buffers(
+        self, seeds: Sequence[int], controlled_teams: Sequence[int]
+    ) -> BatchBuffers:
+        """Reset slots in partnership-control mode without copying outputs."""
+        self._require_open()
+        self._require_count(seeds, "seeds")
+        self._require_count(controlled_teams, "controlled_teams")
+        for index in range(self.environment_count):
+            if controlled_teams[index] not in (0, 1):
+                raise ValueError("controlled teams must be 0 or 1")
+            self._seeds[index] = seeds[index]
+            self._learning_seats[index] = controlled_teams[index]
+        success = lib.euchre_bridge_batch_reset_teams(
+            self._batch,
+            self._seeds,
+            self._learning_seats,
+            self._observations,
+            self._action_masks,
+            self._rewards,
+            self._statuses,
+        )
+        self._check_success(success)
+        return self.buffers
+
     def advance_buffers(self) -> BatchBuffers:
         """Step or reset every slot using values in the writable input views."""
         self._require_open()
         success = lib.euchre_bridge_batch_advance(
+            self._batch,
+            self._actions,
+            self._reset_flags,
+            self._seeds,
+            self._learning_seats,
+            self._observations,
+            self._action_masks,
+            self._rewards,
+            self._statuses,
+        )
+        self._check_success(success)
+        return self.buffers
+
+    def advance_team_buffers(self) -> BatchBuffers:
+        """Step or replace partnership-controlled slots from writable views."""
+        self._require_open()
+        success = lib.euchre_bridge_batch_advance_teams(
             self._batch,
             self._actions,
             self._reset_flags,

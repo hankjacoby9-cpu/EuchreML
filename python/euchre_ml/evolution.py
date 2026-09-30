@@ -9,7 +9,7 @@ from typing import Iterable, List, Sequence, Tuple
 import numpy as np
 
 from .env import ACTION_COUNT, OBSERVATION_SIZE, EuchreBatchEnv
-from .evaluation import run_episode
+from .evaluation import run_team_episode
 from .features import encode_feature_batch
 from .neural_policy import NeuralPolicy, NetworkShape, initialize_genome
 from .policies import Policy, simple_heuristic_policy
@@ -52,9 +52,9 @@ def build_cases(
 ) -> Tuple[EvaluationCase, ...]:
     """Evaluate the control policy once so every candidate uses paired rewards."""
     return tuple(
-        EvaluationCase(seed, seat, run_episode(baseline, seed, seat).reward)
+        EvaluationCase(seed, team, run_team_episode(baseline, seed, team).reward)
         for seed in seeds
-        for seat in range(4)
+        for team in range(2)
     )
 
 
@@ -78,7 +78,7 @@ def evaluate_genomes_batched(
 
     initial_cases = [cases[index] for index in slot_cases]
     with EuchreBatchEnv(environment_count) as batch:
-        buffers = batch.reset_buffers(
+        buffers = batch.reset_team_buffers(
             [case.seed for case in initial_cases],
             [case.seat for case in initial_cases],
         )
@@ -138,7 +138,7 @@ def evaluate_genomes_batched(
                     legal = masks[decision_array[local]].astype(bool)
                     selected = np.argmax(np.where(legal, logits, -np.inf), axis=1)
                     actions[decision_array[local]] = selected
-            batch.advance_buffers()
+            batch.advance_team_buffers()
 
     return reward_differences / len(cases)
 

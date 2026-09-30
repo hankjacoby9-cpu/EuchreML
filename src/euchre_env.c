@@ -9,7 +9,9 @@
 
 struct EuchreEnv {
     EuchreGame game;
-    int learning_seat;
+    unsigned controlled_seats;
+    int reward_team;
+    int observation_seat;
     uint64_t opponent_state;
     bool active;
 };
@@ -27,10 +29,10 @@ static EuchreAction only_legal_action(
 static EuchreEnvStatus finish_hand(
     EuchreEnv *env, EuchreObservation *observation,
     bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
-    int team = env->learning_seat % 2;
-    *reward = env->game.score[team] - env->game.score[1 - team];
+    *reward = env->game.score[env->reward_team] -
+              env->game.score[1 - env->reward_team];
     memset(legal_actions, 0, sizeof(bool) * EUCHRE_ACTION_COUNT);
-    if (!euchre_observe(&env->game, env->learning_seat, observation)) {
+    if (!euchre_observe(&env->game, env->observation_seat, observation)) {
         return EUCHRE_ENV_ERROR;
     }
     env->active = false;
@@ -53,7 +55,8 @@ static EuchreEnvStatus advance_to_decision(
         if (legal_count == 0) return EUCHRE_ENV_ERROR;
 
         int player = env->game.current_player;
-        if (player == env->learning_seat && legal_count > 1) {
+        if ((env->controlled_seats & (1U << player)) && legal_count > 1) {
+            env->observation_seat = player;
             if (!euchre_observe(&env->game, player, observation)) {
                 return EUCHRE_ENV_ERROR;
             }
@@ -99,7 +102,30 @@ EuchreEnvStatus euchre_env_reset(
     }
 
     euchre_init(&env->game, seed);
-    env->learning_seat = learning_seat;
+    env->controlled_seats = 1U << learning_seat;
+    env->reward_team = learning_seat % 2;
+    env->observation_seat = learning_seat;
+    env->opponent_state = seed ^ UINT64_C(0xa0761d6478bd642f);
+    env->active = true;
+    euchre_deal(&env->game);
+
+    return advance_to_decision(env, observation, legal_actions, reward);
+}
+
+EuchreEnvStatus euchre_env_reset_team(
+    EuchreEnv *env, uint64_t seed, int controlled_team,
+    EuchreObservation *observation,
+    bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
+    if (env == NULL || observation == NULL || legal_actions == NULL ||
+        reward == NULL || controlled_team < 0 || controlled_team > 1) {
+        return EUCHRE_ENV_ERROR;
+    }
+
+    euchre_init(&env->game, seed);
+    env->controlled_seats = (1U << controlled_team) |
+                            (1U << (controlled_team + 2));
+    env->reward_team = controlled_team;
+    env->observation_seat = controlled_team;
     env->opponent_state = seed ^ UINT64_C(0xa0761d6478bd642f);
     env->active = true;
     euchre_deal(&env->game);
@@ -113,7 +139,7 @@ EuchreEnvStatus euchre_env_step(
     bool legal_actions[EUCHRE_ACTION_COUNT], int *reward) {
     if (env == NULL || observation == NULL || legal_actions == NULL ||
         reward == NULL || !env->active ||
-        env->game.current_player != env->learning_seat) {
+        !(env->controlled_seats & (1U << env->game.current_player))) {
         return EUCHRE_ENV_ERROR;
     }
 

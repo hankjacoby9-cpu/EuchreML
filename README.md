@@ -127,6 +127,10 @@ Evaluate a saved policy on a separate, locked seed range:
     --seed-start 2000001 --seeds 10000
 ```
 
+Use `--control team` for checkpoints trained to control both partners. The
+shared policy is called separately with each acting seat's private observation;
+the partners never receive a combined hand or shared policy memory.
+
 ## Design boundary
 
 `EuchreGame` owns the rules and complete state. Each `EuchrePolicy` receives an

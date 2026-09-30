@@ -123,6 +123,56 @@ class BridgeIntegrationTests(unittest.TestCase):
 
             self.assertEqual(completed, target_episodes)
 
+    def test_partnership_control_returns_only_acting_partner_views(self) -> None:
+        for team in (0, 1):
+            observed_seats = set()
+            with EuchreEnv() as env:
+                for seed in range(1, 21):
+                    result = env.reset_team(seed, team)
+                    while not result.done:
+                        observing_seat = result.observation[1]
+                        self.assertEqual(observing_seat, result.observation[3])
+                        self.assertEqual(observing_seat % 2, team)
+                        self.assertGreaterEqual(sum(result.observation[20:44]), 2)
+                        self.assertLessEqual(sum(result.observation[20:44]), 6)
+                        observed_seats.add(observing_seat)
+                        action = next(
+                            index
+                            for index, enabled in enumerate(result.action_mask)
+                            if enabled
+                        )
+                        result = env.step(action)
+                    self.assertEqual(result.observation[1] % 2, team)
+                    self.assertIn(result.reward, (-4, -2, -1, 1, 2, 4))
+            self.assertEqual(observed_seats, {team, team + 2})
+
+    def test_zero_copy_partnership_batch_preserves_team_views(self) -> None:
+        with EuchreBatchEnv(4) as batch:
+            teams = [0, 1, 0, 1]
+            buffers = batch.reset_team_buffers([11, 12, 13, 14], teams)
+            observations = [
+                buffers.observations[
+                    index * OBSERVATION_SIZE:(index + 1) * OBSERVATION_SIZE
+                ]
+                for index in range(4)
+            ]
+            for index, observation in enumerate(observations):
+                self.assertEqual(observation[1] % 2, teams[index])
+            for index in range(4):
+                mask_start = index * ACTION_COUNT
+                buffers.actions[index] = next(
+                    action
+                    for action in range(ACTION_COUNT)
+                    if buffers.action_masks[mask_start + action]
+                )
+                buffers.reset_flags[index] = 0
+            returned = batch.advance_team_buffers()
+            for index in range(4):
+                self.assertEqual(
+                    returned.observations[index * OBSERVATION_SIZE + 1] % 2,
+                    teams[index],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

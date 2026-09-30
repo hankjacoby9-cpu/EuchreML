@@ -70,7 +70,7 @@ class PairedEvaluation:
     paired_wins: int
     paired_ties: int
     paired_losses: int
-    advantage_by_seat: Tuple[float, float, float, float]
+    advantage_by_seat: Tuple[float, ...]
 
 
 def _decision_category(result: StepResult) -> str:
@@ -118,6 +118,51 @@ def run_episode(policy: Policy, seed: int, seat: int) -> EpisodeResult:
         own_call_sweep=own_call and maker_tricks == 5,
         own_lone_call=own_call and going_alone,
         own_lone_sweep=own_call and going_alone and maker_tricks == 5,
+    )
+
+
+def run_team_episode(policy: Policy, seed: int, team: int) -> EpisodeResult:
+    """Run one shared policy for a partnership with separate per-seat RNGs."""
+    if team not in (0, 1):
+        raise ValueError("team must be 0 or 1")
+    policy_rngs = {
+        seat: random.Random((seed << 3) ^ seat ^ 0xA5A5A5A5)
+        for seat in (team, team + 2)
+    }
+    decisions: Dict[str, int] = {}
+    calls = 0
+
+    with EuchreEnv() as env:
+        result = env.reset_team(seed=seed, controlled_team=team)
+        while not result.done:
+            acting_seat = result.observation[1]
+            if acting_seat not in policy_rngs:
+                raise RuntimeError("Environment exposed a non-partner decision")
+            category = _decision_category(result)
+            decisions[category] = decisions.get(category, 0) + 1
+            action = policy(result, policy_rngs[acting_seat])
+            if action < 0 or action >= len(result.action_mask) or not result.action_mask[action]:
+                raise ValueError(f"Policy selected illegal action {action}")
+            if action in (25, 26) or 27 <= action <= 34:
+                calls += 1
+            result = env.step(action)
+
+    caller = result.observation[5]
+    going_alone = bool(result.observation[7])
+    makers_team = caller % 2
+    maker_tricks = result.observation[16 + makers_team]
+    team_called = makers_team == team
+    return EpisodeResult(
+        seed=seed,
+        seat=team,
+        reward=result.reward,
+        decisions=decisions,
+        calls=calls,
+        own_call=team_called,
+        own_call_euchred=team_called and maker_tricks < 3,
+        own_call_sweep=team_called and maker_tricks == 5,
+        own_lone_call=team_called and going_alone,
+        own_lone_sweep=team_called and going_alone and maker_tricks == 5,
     )
 
 
@@ -191,5 +236,53 @@ def evaluate_paired(
         paired_losses=sum(difference < 0 for difference in differences),
         advantage_by_seat=tuple(
             sum(values) / len(values) for values in seat_differences
+        ),
+    )
+
+
+def evaluate_paired_teams(
+    policy_a: Policy,
+    policy_b: Policy,
+    seeds: Iterable[int],
+    policy_a_name: str = "policy_a",
+    policy_b_name: str = "policy_b",
+    bootstrap_samples: int = 1000,
+    confidence: float = 0.95,
+) -> PairedEvaluation:
+    """Compare shared policies on identical deals as both partnerships."""
+    seed_values = tuple(seeds)
+    if not seed_values:
+        raise ValueError("At least one seed is required")
+
+    summary_a = PolicySummary()
+    summary_b = PolicySummary()
+    differences: List[int] = []
+    team_differences: List[List[int]] = [[], []]
+    for seed in seed_values:
+        for team in range(2):
+            result_a = run_team_episode(policy_a, seed, team)
+            result_b = run_team_episode(policy_b, seed, team)
+            summary_a.add(result_a)
+            summary_b.add(result_b)
+            difference = result_a.reward - result_b.reward
+            differences.append(difference)
+            team_differences[team].append(difference)
+
+    interval = _bootstrap_interval(
+        differences, bootstrap_samples, confidence, seed=0xE0C4E
+    )
+    return PairedEvaluation(
+        policy_a=policy_a_name,
+        policy_b=policy_b_name,
+        pairs=len(differences),
+        summary_a=summary_a,
+        summary_b=summary_b,
+        mean_advantage=sum(differences) / len(differences),
+        confidence_interval=interval,
+        paired_wins=sum(difference > 0 for difference in differences),
+        paired_ties=sum(difference == 0 for difference in differences),
+        paired_losses=sum(difference < 0 for difference in differences),
+        advantage_by_seat=tuple(
+            sum(values) / len(values) for values in team_differences
         ),
     )
