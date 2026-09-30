@@ -3,6 +3,7 @@
 
 import argparse
 
+from euchre_ml.bidding_policy import BiddingPolicy
 from euchre_ml.evaluation import (
     PairedEvaluation,
     PolicySummary,
@@ -74,7 +75,7 @@ def print_evaluation(evaluation: PairedEvaluation, control: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    policy_names = (*POLICIES, "neural")
+    policy_names = (*POLICIES, "neural", "bidding")
     parser.add_argument("--policy-a", choices=policy_names, default="heuristic")
     parser.add_argument("--policy-b", choices=policy_names, default="random")
     parser.add_argument("--checkpoint-a")
@@ -95,11 +96,19 @@ def parse_args() -> argparse.Namespace:
         parser.error("--checkpoint-a is required for neural policy A")
     if args.policy_b == "neural" and not args.checkpoint_b:
         parser.error("--checkpoint-b is required for neural policy B")
+    if args.policy_a == "bidding" and not args.checkpoint_a:
+        parser.error("--checkpoint-a is required for bidding policy A")
+    if args.policy_b == "bidding" and not args.checkpoint_b:
+        parser.error("--checkpoint-b is required for bidding policy B")
     return args
 
 
 def load_policy(name: str, checkpoint: str):
-    return NeuralPolicy.load(checkpoint) if name == "neural" else POLICIES[name]
+    if name == "neural":
+        return NeuralPolicy.load(checkpoint)
+    if name == "bidding":
+        return BiddingPolicy.load(checkpoint)
+    return POLICIES[name]
 
 
 def main() -> None:

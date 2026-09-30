@@ -131,6 +131,21 @@ Use `--control team` for checkpoints trained to control both partners. The
 shared policy is called separately with each acting seat's private observation;
 the partners never receive a combined hand or shared policy memory.
 
+## Interpretable bidding evolution
+
+Evolve a compact candidate-suit score while keeping card play fixed to the
+reference heuristic:
+
+```sh
+make train-bidding
+```
+
+The 16-value genome contains named weights for bowers, trump count, high trump,
+off-suit aces, voids, represented suits, upcard/dealer relationships, and three
+calling thresholds. Evolution receives no calling bonus or behavioral penalty;
+selection uses only paired team score margin. Inspectable weights are printed
+after training and stored with the checkpoint.
+
 ## Design boundary
 
 `EuchreGame` owns the rules and complete state. Each `EuchrePolicy` receives an

@@ -2,7 +2,7 @@ CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2
 CPPFLAGS ?= -Iinclude
 
-.PHONY: all run test test-python evaluate train-evolution benchmark benchmark-python clean
+.PHONY: all run test test-python evaluate train-evolution train-bidding benchmark benchmark-python clean
 
 all: build/euchre_demo
 
@@ -31,13 +31,16 @@ test: build/test_euchre
 
 test-python:
 	.venv/bin/python -m unittest tests/test_python_bridge.py tests/test_evaluation.py \
-		tests/test_evolution.py
+		tests/test_evolution.py tests/test_bidding_evolution.py
 
 evaluate:
 	.venv/bin/python scripts/evaluate_policies.py
 
 train-evolution:
 	.venv/bin/python scripts/train_evolution.py
+
+train-bidding:
+	.venv/bin/python scripts/train_bidding.py
 
 benchmark: build/euchre_benchmark
 	./build/euchre_benchmark
