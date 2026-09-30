@@ -163,7 +163,7 @@ make train-card-play
 ```
 
 This card policy sees only the acting player's observation and public trick
-state. Its fitness remains final paired team margin.
+state. Its fitness uses full private-partnership matches.
 
 ## Private partnership matches
 
@@ -180,6 +180,12 @@ margin as the secondary statistic:
     --policy-a hybrid --checkpoint-a checkpoints/card_play_best.npz \
     --policy-b heuristic --seeds 1000
 ```
+
+Card-play mutations are ranked lexicographically: paired match-win advantage
+first, capped score-margin advantage second. Every candidate receives a small
+common-deal screen, the strongest finalists receive the larger training set,
+and checkpoint selection uses a separate fixed validation set. Continue from
+an existing card policy with `--initial-checkpoint`.
 
 ## Design boundary
 
